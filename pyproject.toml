@@ -15,6 +15,7 @@ dependencies = [
   "soundfile>=0.12,<1",
   "TikTokLive>=7.0,<8",
   "uvicorn[standard]>=0.30,<1",
+  "websockets>=15,<18",
   "zerotts==0.1.5",
 ]
 

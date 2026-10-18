@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import html
 import json
 import logging
 import random
@@ -152,6 +153,67 @@ class FacebookCommentSource:
             for item in data
             if item.get("id") and str(item.get("message") or "").strip()
         ]
+
+
+class FacebookPersonalCommentSource:
+    """Receive personal LIVE comments captured by Social Stream Ninja in the user's browser."""
+
+    def __init__(self, settings: Settings):
+        self.session_id = settings.ssn_session_id
+        self._comments: deque[Comment] = deque(maxlen=1000)
+        self._task: asyncio.Task | None = None
+
+    @staticmethod
+    def parse_message(raw: str) -> Comment | None:
+        try:
+            payload = json.loads(raw)
+        except ValueError:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        for key in ("data", "value"):
+            if isinstance(payload.get(key), dict):
+                payload = payload[key]
+        if str(payload.get("type", "")).lower() not in {"facebook", "facebooklive"} or payload.get("event"):
+            return None
+        message = str(payload.get("chatmessage") or "")
+        if not payload.get("textonly"):
+            message = re.sub(r"<[^>]*>", " ", message)
+            message = html.unescape(message)
+        message = re.sub(r"\s+", " ", message).strip()[:1000]
+        if not message:
+            return None
+        author = str(payload.get("chatname") or "Người xem").strip()[:120]
+        identifier = str(payload.get("id") or "").strip()
+        if not identifier:
+            fingerprint = f"{payload.get('timestamp', '')}:{author}:{message}"
+            identifier = hashlib.sha256(fingerprint.encode()).hexdigest()[:24]
+        return Comment(f"facebook-personal:{identifier}", author, message, str(payload.get("timestamp") or ""))
+
+    async def _connect(self) -> None:
+        from websockets.asyncio.client import connect
+
+        url = f"wss://io.socialstream.ninja/join/{self.session_id}/4"
+        while True:
+            try:
+                async with connect(url, open_timeout=10, ping_interval=20, ping_timeout=20) as socket:
+                    log.info("Social Stream Ninja comment relay connected")
+                    async for raw in socket:
+                        comment = self.parse_message(raw)
+                        if comment:
+                            self._comments.append(comment)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("Social Stream Ninja comment relay disconnected; retrying")
+            await asyncio.sleep(3)
+
+    async def fetch(self) -> list[Comment]:
+        if self._task is None or self._task.done():
+            self._task = asyncio.create_task(self._connect())
+        comments = list(self._comments)
+        self._comments.clear()
+        return comments
 
 
 class TikTokCommentSource:
@@ -338,7 +400,7 @@ class ExternalLLM:
         return bool(current and earlier) and len(current & earlier) / len(current | earlier) >= 0.62
 
     async def reply(self, comments: list[Comment]) -> str:
-        sales_mode = self.settings.comment_source == "demo" and self.settings.demo_sales_mode
+        sales_mode = self.settings.demo_sales_mode
         if sales_mode and not comments:
             if not self.remaining_angles:
                 self.remaining_angles = random.sample(list(self.sales_angles), len(self.sales_angles))
@@ -536,12 +598,11 @@ class Pipeline:
     async def create_replies(self) -> None:
         while True:
             await asyncio.sleep(self.settings.fb_batch_seconds)
-            sales_mode = self.settings.comment_source == "demo" and self.settings.demo_sales_mode
+            sales_mode = self.settings.demo_sales_mode
             comments = await asyncio.to_thread(self.store.pending, 1 if sales_mode else self.settings.fb_batch_size)
             if comments and sales_mode:
                 self.sales_generation += 1
                 self._discard_queued_sales()
-                await asyncio.to_thread(self.streamer.drop_pending_sales)
             if not comments:
                 if not sales_mode:
                     continue

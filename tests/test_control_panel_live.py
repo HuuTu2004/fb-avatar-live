@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, patch
 from fastapi import HTTPException
 
 from fb_avatar_live.forwarder import _destinations
+from fb_avatar_live.core import Comment, CommentStore
 
 
 class PersonalFacebookLiveTests(unittest.TestCase):
@@ -76,6 +77,62 @@ class PersonalFacebookLiveTests(unittest.TestCase):
             asyncio.run(panel.save_live(payload))
         self.assertEqual(update.call_args.args[0]["FACEBOOK_STREAM_URL"], panel.FACEBOOK_SERVER_URL + "FB-test-key")
         start.assert_not_called()
+
+    def test_tiktok_comments_can_be_configured_while_facebook_is_sending(self) -> None:
+        panel = self.panel
+        destination = panel.FACEBOOK_SERVER_URL + "FB-test-key"
+        current = {
+            "COMMENT_SOURCE": "demo", "FB_POLL_SECONDS": "2", "FB_BATCH_SECONDS": "2",
+            "DEMO_SALES_MODE": "true", "STREAM_URL": "rtsp://127.0.0.1:8554/avatar",
+            "FACEBOOK_SERVER_URL": panel.FACEBOOK_SERVER_URL, "FACEBOOK_STREAM_URL": destination,
+        }
+        payload = panel.LivePayload(comment_source="tiktok", tiktok_unique_id="@creator",
+                                    demo_sales_mode=True, facebook_server_url=panel.FACEBOOK_SERVER_URL)
+        states = {"fb-avatar-forwarder": "RUNNING", "fb-avatar-tiktok-forwarder": "STOPPED",
+                  "fb-avatar-pipeline": "RUNNING"}
+        with patch.object(panel.env_file, "read", return_value=current), \
+             patch.object(panel.env_file, "update") as update, \
+             patch.object(panel, "_supervisor_status", side_effect=states.get), \
+             patch.object(panel, "_start_or_restart") as restart:
+            asyncio.run(panel.save_live(payload))
+        self.assertEqual(update.call_args.args[0]["TIKTOK_UNIQUE_ID"], "creator")
+        self.assertEqual(update.call_args.args[0]["FACEBOOK_STREAM_URL"], destination)
+        restart.assert_called_once_with("fb-avatar-pipeline")
+
+    def test_running_facebook_destination_cannot_change(self) -> None:
+        panel = self.panel
+        current = {"FACEBOOK_STREAM_URL": panel.FACEBOOK_SERVER_URL + "FB-old-key"}
+        payload = panel.LivePayload(facebook_server_url=panel.FACEBOOK_SERVER_URL,
+                                    facebook_stream_key="FB-new-key")
+        with patch.object(panel.env_file, "read", return_value=current), \
+             patch.object(panel.env_file, "update") as update, \
+             patch.object(panel, "_supervisor_status", return_value="RUNNING"):
+            with self.assertRaises(HTTPException) as error:
+                asyncio.run(panel.save_live(payload))
+        self.assertEqual(error.exception.status_code, 409)
+        update.assert_not_called()
+
+    def test_recent_comments_feed_labels_sources_and_excludes_old_demo_prompts(self) -> None:
+        panel = self.panel
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "comments.sqlite3"
+            store = CommentStore(path)
+            store.add([
+                Comment("tiktok:1", "TikTok · Linh", "Xin chào"),
+                Comment("facebook-personal:1", "Nam", "A di đà Phật"),
+                Comment("123_456", "Hoa", "Hỏi về từ bi"),
+                Comment("dashboard-1", "Bạn", "Bình luận thử"),
+                Comment("sales-demo-1", "Nội bộ", "Không hiển thị"),
+            ])
+            store.mark_processed(["tiktok:1"])
+            store.close()
+            with patch.object(panel.env_file, "read", return_value={"DATA_DIR": directory}):
+                response = asyncio.run(panel.recent_comments())
+            payload = json.loads(response.body)
+            self.assertEqual([item["source"] for item in payload["comments"]],
+                             ["dashboard", "facebook_page", "facebook_personal", "tiktok"])
+            self.assertEqual(payload["comments"][-1]["status"], "processed")
+            self.assertEqual(response.headers["cache-control"], "no-store")
 
     def test_facebook_forwarder_cannot_send_to_tiktok(self) -> None:
         with patch.dict(os.environ, {"FACEBOOK_STREAM_URL": "rtmps://fb.invalid/key", "TIKTOK_STREAM_URL": "rtmp://tt.invalid/key"}):

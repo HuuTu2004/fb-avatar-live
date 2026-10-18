@@ -5,7 +5,9 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
+import sqlite3
 import subprocess
 import tempfile
 import threading
@@ -51,9 +53,10 @@ class PreviewPayload(BaseModel):
 
 
 class LivePayload(BaseModel):
-    comment_source: str = Field(default="demo", pattern="^(facebook|tiktok|both|demo)$")
+    comment_source: str = Field(default="demo", pattern="^(facebook|facebook_personal|tiktok|both|demo)$")
     fb_object_id: str = ""
     fb_page_access_token: str = ""
+    ssn_session_id: str = ""
     facebook_server_url: str = ""
     facebook_stream_key: str = ""
     facebook_stream_url: str = ""
@@ -200,6 +203,7 @@ def _configured(values: dict[str, str]) -> dict[str, bool]:
         "voice": bool(values.get("ZEROTTS_VOICE")),
         "avatar": Path(values.get("AVATAR_VIDEO", "")).is_file(),
         "facebook": bool(values.get("FB_OBJECT_ID") and values.get("FB_PAGE_ACCESS_TOKEN")),
+        "facebook_personal": bool(values.get("SSN_SESSION_ID")),
         "facebook_stream": bool(values.get("FACEBOOK_STREAM_URL")),
         "tiktok": bool(values.get("TIKTOK_UNIQUE_ID")),
         "tiktok_stream": bool(values.get("TIKTOK_STREAM_URL")),
@@ -250,12 +254,53 @@ async def status() -> dict:
         "batch_seconds": values.get("FB_BATCH_SECONDS", "2"),
         "tiktok_unique_id": values.get("TIKTOK_UNIQUE_ID", ""),
         "has_fb_token": bool(values.get("FB_PAGE_ACCESS_TOKEN")),
+        "has_ssn_session_id": bool(values.get("SSN_SESSION_ID")),
         "has_fb_stream_url": bool(values.get("FACEBOOK_STREAM_URL")),
         "facebook_server_url": values.get("FACEBOOK_SERVER_URL") or _facebook_server(values.get("FACEBOOK_STREAM_URL", "")),
         "has_tiktok_stream_url": bool(values.get("TIKTOK_STREAM_URL")),
         "openai_model": values.get("LLM_MODEL", "") if configured["openai"] else "",
         "has_openai_key": configured["openai"],
     }
+
+
+def _recent_comments(path: Path, limit: int) -> list[dict]:
+    if not path.is_file():
+        return []
+    with sqlite3.connect(path, timeout=2) as db:
+        rows = db.execute(
+            "SELECT id, author, message, status, added_at FROM comments "
+            "WHERE id NOT LIKE 'sales-demo-%' ORDER BY added_at DESC, rowid DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    comments = []
+    for identifier, author, message, state, added_at in rows:
+        if identifier.startswith("tiktok:"):
+            source = "tiktok"
+        elif identifier.startswith("facebook-personal:"):
+            source = "facebook_personal"
+        elif identifier.startswith("dashboard-"):
+            source = "dashboard"
+        elif re.fullmatch(r"\d+(?:_\d+)?", identifier):
+            source = "facebook_page"
+        else:
+            source = "other"
+        comments.append({
+            "id": identifier, "source": source, "author": author,
+            "message": message, "status": state, "received_at": added_at,
+        })
+    return comments
+
+
+@app.get("/api/comments/recent")
+async def recent_comments() -> Response:
+    values = env_file.read()
+    path = Path(values.get("DATA_DIR", ROOT / "data")) / "comments.sqlite3"
+    comments = await asyncio.to_thread(_recent_comments, path, 50)
+    return Response(
+        content=json.dumps({"comments": comments}, ensure_ascii=False),
+        media_type="application/json",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 def _saved_openai_key(values: dict[str, str]) -> str:
@@ -474,10 +519,11 @@ async def avatar_file() -> FileResponse:
 
 @app.post("/api/live/save")
 async def save_live(payload: LivePayload) -> dict:
-    if _supervisor_status("fb-avatar-forwarder") == "RUNNING" or _supervisor_status("fb-avatar-tiktok-forwarder") == "RUNNING":
-        raise HTTPException(status_code=409, detail="Dừng phát Facebook/TikTok trước khi đổi cấu hình Live")
     current = env_file.read()
     token = payload.fb_page_access_token.strip() or current.get("FB_PAGE_ACCESS_TOKEN", "")
+    ssn_session_id = payload.ssn_session_id.strip() or current.get("SSN_SESSION_ID", "")
+    if ssn_session_id and not re.fullmatch(r"[A-Za-z0-9_-]{8,128}", ssn_session_id):
+        raise HTTPException(status_code=400, detail="Session ID Social Stream Ninja không hợp lệ")
     existing_facebook = current.get("FACEBOOK_STREAM_URL", "")
     server = payload.facebook_server_url.strip() or current.get("FACEBOOK_SERVER_URL") or _facebook_server(existing_facebook)
     try:
@@ -489,6 +535,7 @@ async def save_live(payload: LivePayload) -> dict:
         "COMMENT_SOURCE": payload.comment_source,
         "FB_OBJECT_ID": payload.fb_object_id.strip(),
         "FB_PAGE_ACCESS_TOKEN": token,
+        "SSN_SESSION_ID": ssn_session_id,
         "FACEBOOK_SERVER_URL": server,
         "FACEBOOK_STREAM_URL": facebook_stream,
         "TIKTOK_UNIQUE_ID": payload.tiktok_unique_id.strip().lstrip("@"),
@@ -498,7 +545,13 @@ async def save_live(payload: LivePayload) -> dict:
         "DEMO_SALES_MODE": str(payload.demo_sales_mode).lower(),
         "STREAM_URL": "rtsp://127.0.0.1:8554/avatar",
     }
-    pipeline_keys = {"COMMENT_SOURCE", "FB_OBJECT_ID", "FB_PAGE_ACCESS_TOKEN", "TIKTOK_UNIQUE_ID", "FB_POLL_SECONDS", "FB_BATCH_SECONDS", "DEMO_SALES_MODE", "STREAM_URL"}
+    if (_supervisor_status("fb-avatar-forwarder") == "RUNNING"
+            and facebook_stream != existing_facebook):
+        raise HTTPException(status_code=409, detail="Dừng gửi Facebook trước khi đổi URL hoặc khóa luồng Facebook")
+    if (_supervisor_status("fb-avatar-tiktok-forwarder") == "RUNNING"
+            and tiktok_stream != current.get("TIKTOK_STREAM_URL", "")):
+        raise HTTPException(status_code=409, detail="Dừng gửi TikTok trước khi đổi RTMP URL hoặc khóa luồng TikTok")
+    pipeline_keys = {"COMMENT_SOURCE", "FB_OBJECT_ID", "FB_PAGE_ACCESS_TOKEN", "SSN_SESSION_ID", "TIKTOK_UNIQUE_ID", "FB_POLL_SECONDS", "FB_BATCH_SECONDS", "DEMO_SALES_MODE", "STREAM_URL"}
     restart_pipeline = any(current.get(key, "") != updates[key] for key in pipeline_keys)
     env_file.update(updates)
     if restart_pipeline and _supervisor_status("fb-avatar-pipeline") == "RUNNING":
@@ -515,6 +568,8 @@ def _start_live() -> None:
     missing = [name for name in required if not configured[name]]
     if source in {"facebook", "both"} and not configured["facebook"]:
         missing.append("facebook comments")
+    if source == "facebook_personal" and not configured["facebook_personal"]:
+        missing.append("Social Stream Ninja session ID")
     if source in {"tiktok", "both"} and not configured["tiktok"]:
         missing.append("tiktok comments")
     if missing:

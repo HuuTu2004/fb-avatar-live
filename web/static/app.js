@@ -2,7 +2,10 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 let state = null;
 let previewAudioEnabled = false;
+let previewVisible = localStorage.getItem('avatar-preview-visible') !== 'false';
 let liveFormLoaded = false;
+let commentsLoading = false;
+let commentsSignature = null;
 
 function toast(message, error = false) {
   const box = $('#toast');
@@ -51,6 +54,7 @@ function updateStatus(data) {
     [salesDemo ? 'Chia sẻ Phật pháp' : 'OpenAI API', salesDemo || data.configured.openai], ['Voice', data.configured.voice], ['Avatar', data.configured.avatar]
   ];
   if (['facebook', 'both'].includes(data.comment_source)) checks.push(['Facebook comments', data.configured.facebook]);
+  if (data.comment_source === 'facebook_personal') checks.push(['Facebook cá nhân · SSN', data.configured.facebook_personal]);
   if (['tiktok', 'both'].includes(data.comment_source)) checks.push(['TikTok comments', data.configured.tiktok]);
   if (data.configured.facebook_stream || data.configured.tiktok_stream) checks.push(['Đích phát đã lưu', true]);
   checks.push(['MuseTalk', data.services.musetalk === 'RUNNING']);
@@ -67,6 +71,7 @@ function updateStatus(data) {
     showChannelSettings();
   }
   const facebookRunning = data.services.forwarder === 'RUNNING';
+  $('#ssn-status').textContent = data.has_ssn_session_id ? 'Đã lưu Session ID trên máy Vast.' : 'Chưa lưu Session ID.';
   const facebookHealth = data.forwarder_health?.facebook;
   $('#facebook-status').textContent = facebookRunning && facebookHealth === 'retrying' ?
     'Kết nối Facebook bị ngắt; hệ thống đang thử lại. Dừng gửi rồi kiểm tra URL và khóa luồng trong Live Producer.' :
@@ -79,7 +84,6 @@ function updateStatus(data) {
   const tiktokRunning = data.services['tiktok-forwarder'] === 'RUNNING';
   $('#start-tiktok').disabled = tiktokRunning || !data.has_tiktok_stream_url || !data.preview_ready;
   $('#stop-tiktok').disabled = !tiktokRunning;
-  $('#save-live').disabled = facebookRunning || tiktokRunning;
   $('#live-save-hint').hidden = !(facebookRunning || tiktokRunning);
   $('#openai-key-hint').textContent = data.has_openai_key ? 'Đã có key lưu trên máy. Giữ trống để tiếp tục dùng.' : 'Key chỉ được lưu trong .env trên máy Vast.';
   if (data.openai_model && ![...$('#openai-model').options].some(o => o.value === data.openai_model)) {
@@ -93,7 +97,59 @@ function updateStatus(data) {
 function showChannelSettings() {
   const source = $('#comment-source').value;
   $('#fb-page-comments').hidden = !['facebook', 'both'].includes(source);
+  $('#fb-personal-comments').hidden = source !== 'facebook_personal';
   $('#tiktok-settings').hidden = !['tiktok', 'both'].includes(source);
+}
+
+function renderComments(comments) {
+  const signature = comments.map(item => `${item.id}:${item.status}`).join('|');
+  if (signature === commentsSignature) return;
+  commentsSignature = signature;
+  const list = $('#comments-list');
+  const scrollTop = list.scrollTop;
+  const labels = {tiktok:'TikTok', facebook_personal:'Facebook cá nhân', facebook_page:'Facebook Page', dashboard:'Bình luận thử', other:'Nguồn khác'};
+  const fragment = document.createDocumentFragment();
+  for (const item of comments) {
+    const row = document.createElement('div');
+    row.className = 'comment-row';
+    const meta = document.createElement('div');
+    meta.className = 'comment-meta';
+    const source = document.createElement('span');
+    source.className = `comment-source source-${item.source}`;
+    source.textContent = labels[item.source] || labels.other;
+    const author = document.createElement('strong');
+    author.textContent = item.source === 'tiktok' ? item.author.replace(/^TikTok · /, '') : item.author;
+    const time = document.createElement('time');
+    time.textContent = new Date(item.received_at * 1000).toLocaleTimeString('vi-VN');
+    meta.append(source, author, time);
+    const message = document.createElement('p');
+    message.textContent = item.message;
+    const status = document.createElement('small');
+    status.className = item.status === 'processed' ? 'comment-done' : 'comment-pending';
+    status.textContent = item.status === 'processed' ? 'AI đã xử lý' : 'Đang chờ AI';
+    row.append(meta, message, status);
+    fragment.append(row);
+  }
+  if (!comments.length) {
+    const empty = document.createElement('p');
+    empty.className = 'comments-empty';
+    empty.textContent = 'Chưa nhận bình luận nào. Khi TikTok/Facebook đang live và nguồn bình luận đã kết nối, bình luận mới sẽ xuất hiện ở đây.';
+    fragment.append(empty);
+  }
+  list.replaceChildren(fragment);
+  list.scrollTop = scrollTop;
+  $('#comments-count').textContent = `${comments.length} bình luận gần nhất`;
+}
+
+async function refreshComments() {
+  if (commentsLoading) return;
+  commentsLoading = true;
+  try {
+    const data = await api('/api/comments/recent', {cache:'no-store'});
+    renderComments(data.comments || []);
+  } catch (_) {
+    $('#comments-count').textContent = 'Chưa cập nhật được';
+  } finally { commentsLoading = false; }
 }
 
 async function refreshStatus(showError = false) {
@@ -102,10 +158,28 @@ async function refreshStatus(showError = false) {
 }
 
 function loadPreview(force = false) {
+  if (!previewVisible) return;
   const frame = $('#live-frame');
   if (force || !frame.src) frame.src = `/preview/avatar?controls=true&muted=${!previewAudioEnabled}&autoplay=true&playsInline=true&t=${Date.now()}`;
   frame.classList.add('ready');
   $('#stage-empty').style.display = 'none';
+}
+
+function setPreviewVisible(visible) {
+  previewVisible = visible;
+  localStorage.setItem('avatar-preview-visible', String(visible));
+  $('#preview-card').classList.toggle('preview-hidden', !visible);
+  $('#toggle-preview').textContent = visible ? 'Ẩn xem live' : 'Hiện xem live';
+  if (visible) {
+    $('#stage-empty').style.display = state?.preview_ready ? 'none' : 'flex';
+    if (state?.preview_ready) loadPreview(true);
+  } else {
+    previewAudioEnabled = false;
+    $('#toggle-audio').textContent = 'Bật âm thanh';
+    const frame = $('#live-frame');
+    frame.src = 'about:blank';
+    frame.classList.remove('ready');
+  }
 }
 
 async function enablePreviewAudio(showMessage = false) {
@@ -153,6 +227,7 @@ $$('.nav').forEach(button => button.addEventListener('click', () => {
 $('#refresh').onclick = () => refreshStatus(true);
 $('#comment-source').onchange = showChannelSettings;
 $('#reload-preview').onclick = () => loadPreview(true);
+$('#toggle-preview').onclick = () => setPreviewVisible(!previewVisible);
 $('#toggle-audio').onclick = async () => {
   previewAudioEnabled = true;
   await enablePreviewAudio(true);
@@ -229,12 +304,13 @@ $('#save-live').onclick = async () => {
     await api('/api/live/save', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       comment_source:$('#comment-source').value,
       fb_object_id:$('#fb-object').value, fb_page_access_token:$('#fb-token').value,
+      ssn_session_id:$('#ssn-session').value,
       facebook_server_url:$('#fb-server').value, facebook_stream_key:$('#fb-key').value,
       tiktok_unique_id:$('#tiktok-user').value,
       tiktok_stream_url:$('#tiktok-stream').value, poll_seconds:Number($('#poll-seconds').value), batch_seconds:Number($('#batch-seconds').value),
       demo_sales_mode:$('#demo-sales-mode').checked
     })});
-    $('#fb-token').value = ''; $('#fb-key').value = ''; $('#tiktok-stream').value = '';
+    $('#fb-token').value = ''; $('#ssn-session').value = ''; $('#fb-key').value = ''; $('#tiktok-stream').value = '';
     liveFormLoaded = false; toast('Đã lưu cấu hình kênh Live'); refreshStatus();
   } catch (error) { toast(error.message, true); }
   finally { busy(button, false); }
@@ -265,9 +341,17 @@ $('#stop-tiktok').onclick = () => channelAction('tiktok', 'stop', $('#stop-tikto
 $('#test-live').onclick = async () => {
   const message = $('#test-message').value.trim();
   if (!message) { toast('Nhập bình luận trước khi gửi', true); return; }
-  try { const data=await api('/api/live/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message})}); $('#test-message').value=''; toast(data.message); }
+  if (previewVisible) {
+    previewAudioEnabled = true;
+    if ($('#live-frame').contentDocument?.querySelector('video')) await enablePreviewAudio(true);
+    else loadPreview(true);
+  }
+  try { const data=await api('/api/live/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message})}); $('#test-message').value=''; toast(data.message); refreshComments(); }
   catch(error){toast(error.message,true)}
 };
 
 setInterval(() => $('#clock').textContent = new Intl.DateTimeFormat('vi-VN',{dateStyle:'medium',timeStyle:'medium'}).format(new Date()),1000);
-refreshStatus(); loadVoices().catch(()=>{}); setInterval(()=>refreshStatus(),5000);
+setPreviewVisible(previewVisible);
+refreshStatus(); refreshComments(); loadVoices().catch(()=>{});
+setInterval(()=>refreshStatus(),5000);
+setInterval(refreshComments,2000);

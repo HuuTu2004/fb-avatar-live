@@ -10,6 +10,7 @@ from fb_avatar_live.core import (
     Comment,
     CommentStore,
     ExternalLLM,
+    FacebookPersonalCommentSource,
     Pipeline,
     SalesDemoLLM,
     ZeroTTSEngine,
@@ -18,6 +19,14 @@ from fb_avatar_live.core import (
 
 
 class CoreTests(unittest.TestCase):
+    def test_ssn_reader_accepts_only_facebook_chat_and_strips_markup(self) -> None:
+        raw = '{"type":"facebook","id":"comment-1","chatname":"An","chatmessage":"<b>Vô thường</b> là gì?","textonly":false}'
+        comment = FacebookPersonalCommentSource.parse_message(raw)
+        self.assertEqual((comment.id, comment.author, comment.message),
+                         ("facebook-personal:comment-1", "An", "Vô thường là gì?"))
+        self.assertIsNone(FacebookPersonalCommentSource.parse_message('{"type":"youtube","chatmessage":"Hi"}'))
+        self.assertIsNone(FacebookPersonalCommentSource.parse_message('{"type":"facebook","event":"follow","chatmessage":"Hi"}'))
+
     def test_split_utterances_preserves_words_and_limit(self) -> None:
         text = "Xin chào mọi người. " + "Một câu khá dài " * 12 + "Cảm ơn nhé!"
         chunks = split_utterances(text, max_chars=60)
@@ -86,7 +95,7 @@ class CoreTests(unittest.TestCase):
                 ZeroTTSEngine(settings)
         self.assertEqual(FakeZeroTTS.providers[0], "CUDAExecutionProvider")
 
-    def test_sales_demo_prefetches_and_answers_viewer_before_more_sales(self) -> None:
+    def test_continuous_mode_answers_facebook_comment_before_more_narration(self) -> None:
         import asyncio
         import contextlib
         import queue
@@ -103,7 +112,7 @@ class CoreTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as directory:
                 pipeline = Pipeline.__new__(Pipeline)
                 pipeline.settings = SimpleNamespace(
-                    fb_batch_seconds=0.01, comment_source="demo", demo_sales_mode=True,
+                    fb_batch_seconds=0.01, comment_source="facebook", demo_sales_mode=True,
                     fb_batch_size=8, stream_prebuffer_segments=2, queue_size=8, speech_chunk_chars=100,
                 )
                 pipeline.store = CommentStore(Path(directory) / "state.sqlite3")
@@ -112,7 +121,11 @@ class CoreTests(unittest.TestCase):
                 pipeline.synthesizing = 0
                 pipeline.rendering = 0
                 pipeline.sales_generation = 0
-                pipeline.streamer = SimpleNamespace(video_queue=queue.Queue(), drop_pending_sales=lambda: None)
+                dropped_sales = []
+                pipeline.streamer = SimpleNamespace(
+                    video_queue=queue.Queue(),
+                    drop_pending_sales=lambda: dropped_sales.append(True),
+                )
                 pipeline.llm = LLM()
                 task = asyncio.create_task(pipeline.create_replies())
                 try:
@@ -136,6 +149,7 @@ class CoreTests(unittest.TestCase):
                     self.assertEqual(pipeline.text_queue.qsize(), 2)
                     self.assertFalse(pipeline.text_queue.get_nowait().is_sales)
                     self.assertFalse(pipeline.text_queue.get_nowait().is_sales)
+                    self.assertEqual(dropped_sales, [])
                 finally:
                     task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):

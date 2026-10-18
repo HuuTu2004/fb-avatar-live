@@ -11,6 +11,7 @@ from .core import (
     DemoCommentSource,
     ExternalLLM,
     FacebookCommentSource,
+    FacebookPersonalCommentSource,
     MuseTalkClient,
     Pipeline,
     SalesDemoLLM,
@@ -31,6 +32,8 @@ async def async_main() -> None:
     async with httpx.AsyncClient(timeout=timeout) as client:
         if settings.comment_source == "facebook":
             source = FacebookCommentSource(settings, client)
+        elif settings.comment_source == "facebook_personal":
+            source = FacebookPersonalCommentSource(settings)
         elif settings.comment_source == "tiktok":
             source = TikTokCommentSource(settings)
         elif settings.comment_source == "both":

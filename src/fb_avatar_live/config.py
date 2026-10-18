@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -52,6 +53,7 @@ class Settings:
     fb_poll_seconds: float
     fb_batch_seconds: float
     fb_batch_size: int
+    ssn_session_id: str
     tiktok_unique_id: str
     llm_base_url: str
     llm_api_key: str
@@ -92,6 +94,7 @@ class Settings:
             fb_poll_seconds=_number("FB_POLL_SECONDS", 2),
             fb_batch_seconds=_number("FB_BATCH_SECONDS", 3),
             fb_batch_size=_integer("FB_BATCH_SIZE", 8),
+            ssn_session_id=os.getenv("SSN_SESSION_ID", "").strip(),
             tiktok_unique_id=os.getenv("TIKTOK_UNIQUE_ID", "").strip().lstrip("@"),
             llm_base_url=os.getenv("LLM_BASE_URL", "").rstrip("/"),
             llm_api_key=os.getenv("LLM_API_KEY", ""),
@@ -135,8 +138,12 @@ class Settings:
                 missing.append("FB_PAGE_ACCESS_TOKEN")
         if self.comment_source in {"tiktok", "both"} and not self.tiktok_unique_id:
             missing.append("TIKTOK_UNIQUE_ID")
-        if self.comment_source not in {"facebook", "tiktok", "both", "demo"}:
-            raise ValueError("COMMENT_SOURCE must be facebook, tiktok, both, or demo")
+        if self.comment_source == "facebook_personal" and not self.ssn_session_id:
+            missing.append("SSN_SESSION_ID")
+        if self.comment_source not in {"facebook", "facebook_personal", "tiktok", "both", "demo"}:
+            raise ValueError("COMMENT_SOURCE must be facebook, facebook_personal, tiktok, both, or demo")
+        if self.ssn_session_id and not re.fullmatch(r"[A-Za-z0-9_-]{8,128}", self.ssn_session_id):
+            raise ValueError("SSN_SESSION_ID is invalid")
         if self.zerotts_provider not in {"cpu", "cuda"}:
             raise ValueError("ZEROTTS_PROVIDER must be cpu or cuda")
         required = [("STREAM_URL", self.stream_url)]

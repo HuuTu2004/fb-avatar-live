@@ -111,6 +111,8 @@ supervisorctl status fb-avatar-control fb-avatar-mediamtx fb-avatar-musetalk fb-
 
 Script cài bốn service preview tự chạy; **forwarder Facebook và TikTok mặc định không tự chạy**. Trong web, nút **Bắt đầu preview** không phát ra ngoài. Khi muốn live Facebook cá nhân, nhập URL máy chủ và khóa luồng trong mục Avatar & Live, lưu, chờ preview rồi bấm **Bắt đầu gửi lên Facebook**; kiểm tra và bấm **Phát trực tiếp** trong Facebook Live Producer. Trên instance hiện tại, Supervisor của cả hai forwarder cũng đặt `autostart=false`.
 
+Đọc bình luận live trên **trang cá nhân** dùng [Social Stream Ninja](https://github.com/steveseguin/social_stream) ở Chrome của người phát. Mở video như người xem, bật capture Facebook, bật hai tùy chọn **Enable remote API control of extension** và **Send chat messages to API server**, rồi lấy Session ID trong URL dock. Trên web chọn **Facebook cá nhân · Social Stream Ninja**, dán Session ID và lưu. `COMMENT_SOURCE=facebook_personal` và `SSN_SESSION_ID` sẽ được lưu trong `.env`; cần OpenAI key để trả lời. Relay `io.socialstream.ninja` phải truy cập được từ Vast. Giữ tab Facebook mở; nếu SSN không thu được comment thì pipeline vẫn nói nội dung nền khi bật chia sẻ liên tục. Dừng kênh gửi Facebook trước khi đổi cấu hình Live để pipeline khởi động lại an toàn.
+
 Mở web qua SSH tunnel riêng từ PowerShell; thay IP/cổng mới:
 
 ```powershell
