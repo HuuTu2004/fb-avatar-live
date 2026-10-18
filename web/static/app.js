@@ -44,7 +44,7 @@ function updateStatus(data) {
 
   const salesDemo = data.comment_source === 'demo' && data.demo_sales_mode;
   const checks = [
-    [salesDemo ? 'Demo bán hàng' : 'OpenAI API', salesDemo || data.configured.openai], ['Voice', data.configured.voice], ['Avatar', data.configured.avatar]
+    [salesDemo ? 'Chia sẻ Phật pháp' : 'OpenAI API', salesDemo || data.configured.openai], ['Voice', data.configured.voice], ['Avatar', data.configured.avatar]
   ];
   if (['facebook', 'both'].includes(data.comment_source)) checks.push(['Facebook comments', data.configured.facebook]);
   if (['tiktok', 'both'].includes(data.comment_source)) checks.push(['TikTok comments', data.configured.tiktok]);

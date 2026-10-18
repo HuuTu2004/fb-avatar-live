@@ -59,7 +59,7 @@ class LivePayload(BaseModel):
 
 
 class TestPayload(BaseModel):
-    message: str = Field(default="Xin chào, hãy giới thiệu ngắn về buổi livestream này.", min_length=1, max_length=500)
+    message: str = Field(default="Vô thường là gì?", min_length=1, max_length=500)
 
 
 class EnvFile:

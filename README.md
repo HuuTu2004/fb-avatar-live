@@ -71,7 +71,7 @@ TIKTOK_STREAM_URL=rtmp://...private-stream-key...
 
 Để xem WebRTC trước khi live thật, chọn **Chỉ preview · dùng câu thử**, để trống cả hai stream URL, bấm **Bắt đầu preview / live**, rồi gửi câu kiểm tra trên Dashboard. Đích Facebook/TikTok là tùy chọn; forwarder chỉ chờ khi chưa có URL nên không phát ra ngoài.
 
-Để kiểm tra avatar nói liên tục, bật **Demo bán nước giặt nói liên tục** trong mục Avatar & Live. Khi chưa có OpenAI key, pipeline dùng vòng kịch bản nội bộ; sau khi lưu OpenAI key và model, cùng chế độ này sẽ dùng OpenAI để tạo lời dẫn từ các gợi ý bán hàng tự động.
+Để kiểm tra avatar nói liên tục, bật **Chia sẻ Phật pháp nói liên tục** trong mục Avatar & Live. Khi chưa có OpenAI key, pipeline dùng vòng kịch bản nội bộ; sau khi lưu OpenAI key và model, cùng chế độ này sẽ dùng OpenAI để tạo lời dẫn từ các chủ đề giáo lý luân phiên.
 
 Không commit `.env`; token Facebook, API key LLM và stream key đều là bí mật.
 
@@ -102,7 +102,7 @@ Sau khi hai service chạy, thêm comment giả:
 
 ```bash
 mkdir -p data
-echo '{"id":"1","author":"An","message":"Bạn giới thiệu sản phẩm này giúp mình nhé"}' >> data/demo_comments.jsonl
+echo '{"id":"1","author":"An","message":"Vô thường là gì?"}' >> data/demo_comments.jsonl
 ```
 
 Pipeline vẫn gọi LLM, ZeroTTS, MuseTalk và stream thật. Preview nằm tại dashboard; đường WHEP nội bộ là `/preview/avatar/whep`.
@@ -116,7 +116,7 @@ Pipeline vẫn gọi LLM, ZeroTTS, MuseTalk và stream thật. Preview nằm t�
 - `ZEROTTS_THREADS=2`: số luồng ONNX đang dùng với CUDA; với CPU có thể dùng 4.
 - `ZEROTTS_WARMUP=true`: tổng hợp một câu rất ngắn khi khởi động để lượt bình luận đầu không chịu chi phí khởi tạo ONNX.
 - `SPEECH_CHUNK_CHARS=260`: giữ trọn một lượt trả lời trong cùng ngữ cảnh audio của MuseTalk, tránh đoạn đuôi ngắn và điểm nối giữa câu.
-- Khi bật demo bán hàng và có OpenAI key, AI chọn góc nói khác nhau ở mỗi lượt, nhớ ba lượt gần nhất để nối ý và tránh lặp lời mở đầu. Nội dung sản phẩm lấy từ `LLM_SYSTEM_PROMPT`.
+- Khi bật chia sẻ Phật pháp liên tục và có OpenAI key, AI luân phiên các chủ đề cốt lõi và ứng dụng đời thường, nhớ tám lượt gần nhất để nối ý và tránh lặp. Bình luận trong hàng đợi được trả lời trước lượt giảng tiếp theo. Có thể chỉnh vai trò và giọng nói trong `LLM_SYSTEM_PROMPT`; biến `DEMO_SALES_MODE` giữ tên cũ để tương thích cấu hình.
 - `STREAM_PREBUFFER_SEGMENTS=2`: giữ hai lượt đầy đủ để che dao động thời gian của ZeroTTS/MuseTalk; đổi lại lần nói đầu tiên bắt đầu chậm hơn.
 - `MUSETALK_BATCH_SIZE=20`: tăng đến khi GPU gần đầy. RTX 3090 24 GB thường đủ dư cho inference FP16.
 - `MUSETALK_XFORMERS=true`: dùng attention tối ưu; script bootstrap cài bản khớp PyTorch 2.0.1.

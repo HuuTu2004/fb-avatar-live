@@ -57,7 +57,7 @@ class CoreTests(unittest.TestCase):
         source = CombinedCommentSource(Source(Comment("facebook:1", "An", "A")), Source(Comment("tiktok:2", "Bình", "B")))
         self.assertEqual([item.id for item in asyncio.run(source.fetch())], ["facebook:1", "tiktok:2"])
 
-    def test_sales_demo_keeps_producing_unique_content(self) -> None:
+    def test_dharma_demo_keeps_producing_unique_content(self) -> None:
         import asyncio
 
         llm = SalesDemoLLM()
@@ -65,6 +65,9 @@ class CoreTests(unittest.TestCase):
         second_script = asyncio.run(llm.reply([]))
         self.assertTrue(first_script)
         self.assertNotEqual(first_script, second_script)
+        self.assertTrue(any("Tứ diệu đế" in script for script in llm.scripts))
+        self.assertTrue(any("Bát chánh đạo" in script for script in llm.scripts))
+        self.assertFalse(any("nước giặt" in script for script in llm.scripts))
 
     def test_zerotts_cuda_does_not_silently_fall_back_to_cpu(self) -> None:
         import sys
@@ -142,7 +145,7 @@ class CoreTests(unittest.TestCase):
 
         asyncio.run(check())
 
-    def test_sales_prompt_continues_without_repeated_acknowledgement(self) -> None:
+    def test_dharma_prompt_rotates_topics_and_answers_comment(self) -> None:
         import asyncio
 
         class Client:
@@ -152,11 +155,10 @@ class CoreTests(unittest.TestCase):
             async def post(self, url, **kwargs):
                 self.requests.append(kwargs["json"])
                 content = (
-                    "Dạ, Đầu tiên mình phân loại quần áo sáng màu và tối màu trước khi giặt "
-                    "để tiện chọn cách giặt phù hợp, sau đó đọc hướng dẫn trên nhãn từng món. "
+                    "Dạ, Vô thường nhắc mình rằng mọi thứ đều đổi thay. "
                     + "Nói thêm một ý " * 30
                     if len(self.requests) == 1
-                    else "Dạ. Sau đó chọn lượng nước giặt phù hợp."
+                    else "Dạ. Mình có thể bắt đầu bằng cách nhận biết một hơi thở."
                 )
                 return SimpleNamespace(
                     raise_for_status=lambda: None,
@@ -165,40 +167,36 @@ class CoreTests(unittest.TestCase):
 
         client = Client()
         settings = SimpleNamespace(
-            comment_source="demo",
-            demo_sales_mode=True,
-            llm_base_url="https://example.test/v1",
-            llm_api_key="test",
-            llm_model="gpt-6-luna",
-            llm_system_prompt="Bán nước giặt.",
+            comment_source="demo", demo_sales_mode=True,
+            llm_base_url="https://example.test/v1", llm_api_key="test",
+            llm_model="gpt-6-luna", llm_system_prompt="Chia sẻ Phật pháp.",
             llm_max_reply_chars=260,
         )
         llm = ExternalLLM(settings, client)
         first = asyncio.run(llm.reply([]))
         second = asyncio.run(llm.reply([]))
 
-        self.assertEqual(
-            first,
-            "Đầu tiên mình phân loại quần áo sáng màu và tối màu trước khi giặt "
-            "để tiện chọn cách giặt phù hợp, sau đó đọc hướng dẫn trên nhãn từng món.",
-        )
-        self.assertEqual(second, "Sau đó chọn lượng nước giặt phù hợp.")
+        self.assertLessEqual(len(first), 260)
+        self.assertFalse(first.lower().startswith("dạ"))
+        self.assertEqual(second, "Mình có thể bắt đầu bằng cách nhận biết một hơi thở.")
         first_prompt = client.requests[0]["messages"][1]["content"]
         second_prompt = client.requests[1]["messages"][1]["content"]
-        self.assertNotIn("Hãy tiếp tục giới thiệu sản phẩm", first_prompt)
+        self.assertIn("Phật pháp", first_prompt)
+        self.assertIn("không bịa lời Phật", first_prompt)
+        self.assertNotIn("nước giặt", first_prompt)
         self.assertIn(first, second_prompt)
         self.assertEqual(client.requests[0]["reasoning_effort"], "none")
         self.assertEqual(client.requests[0]["max_completion_tokens"], 512)
-        self.assertNotEqual(first_prompt.split("Góc gợi ý cho lượt này: ")[1].split(". Có thể")[0],
-                            second_prompt.split("Góc gợi ý cho lượt này: ")[1].split(". Có thể")[0])
+        self.assertNotEqual(first_prompt.split("Chủ đề lượt này: ")[1].split(". Có thể")[0],
+                            second_prompt.split("Chủ đề lượt này: ")[1].split(". Có thể")[0])
 
-        asyncio.run(llm.reply([Comment("dashboard-1", "Bạn", "Bao tiền vậy?")]))
+        asyncio.run(llm.reply([Comment("dashboard-1", "Bạn", "Vô thường là gì?")]))
         viewer_prompt = client.requests[2]["messages"][1]["content"]
-        self.assertIn("Bao tiền vậy?", viewer_prompt)
-        self.assertIn("Trả lời trực tiếp", viewer_prompt)
-        self.assertNotIn("Góc gợi ý cho lượt này", viewer_prompt)
+        self.assertIn("Vô thường là gì?", viewer_prompt)
+        self.assertIn("Ưu tiên trả lời trực tiếp", viewer_prompt)
+        self.assertNotIn("Chủ đề lượt này", viewer_prompt)
 
-    def test_sales_reply_retries_near_duplicate(self) -> None:
+    def test_dharma_reply_retries_near_duplicate(self) -> None:
         import asyncio
 
         class Client:
@@ -208,15 +206,15 @@ class CoreTests(unittest.TestCase):
             async def post(self, *args, **kwargs):
                 self.calls += 1
                 reply = (
-                    "Hãy phân loại quần áo sáng màu trước khi giặt để giữ màu đẹp hơn."
+                    "Vô thường nhắc mình rằng mọi sự đều thay đổi theo thời gian."
                     if self.calls < 3 else
-                    "Với mẻ đồ ít, hãy cân nhắc lượng nước giặt vừa đủ theo hướng dẫn trên nhãn."
+                    "Khi tâm xao động, mình thử nhận biết hơi thở rồi quay về hiện tại."
                 )
                 return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"choices": [{"message": {"content": reply}}]})
 
         settings = SimpleNamespace(
             comment_source="demo", demo_sales_mode=True, llm_base_url="https://example.test/v1",
-            llm_api_key="test", llm_model="gpt-6-luna", llm_system_prompt="Bán nước giặt.",
+            llm_api_key="test", llm_model="gpt-6-luna", llm_system_prompt="Chia sẻ Phật pháp.",
             llm_max_reply_chars=260,
         )
         client = Client()
@@ -226,7 +224,7 @@ class CoreTests(unittest.TestCase):
         self.assertNotEqual(first, second)
         self.assertEqual(client.calls, 3)
 
-    def test_sales_style_without_product_name_retries_brand_mention(self) -> None:
+    def test_dharma_style_without_question_retries_question(self) -> None:
         import asyncio
 
         class Client:
@@ -235,20 +233,20 @@ class CoreTests(unittest.TestCase):
 
             async def post(self, *args, **kwargs):
                 self.calls += 1
-                reply = "Hãy xem túi AVATAR nhé." if self.calls == 1 else "Phân loại đồ sáng và tối trước khi giặt để dễ chăm từng mẻ."
+                reply = "Bạn có đang chú ý hơi thở?" if self.calls == 1 else "Mình có thể nhận biết hơi thở đang vào và ra."
                 return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"choices": [{"message": {"content": reply}}]})
 
         settings = SimpleNamespace(
             comment_source="demo", demo_sales_mode=True, llm_base_url="https://example.test/v1",
             llm_api_key="test", llm_model="gpt-6-luna",
-            llm_system_prompt="Giới thiệu túi nước giặt xả AVATAR.", llm_max_reply_chars=260,
+            llm_system_prompt="Chia sẻ Phật pháp.", llm_max_reply_chars=260,
         )
         client = Client()
         llm = ExternalLLM(settings, client)
-        llm.remaining_styles = ["Nói một mẹo; không đặt câu hỏi, không nhắc tên sản phẩm hay lời mời mua."]
+        llm.remaining_styles = ["Giải thích một ý; không đặt câu hỏi."]
         reply = asyncio.run(llm.reply([]))
         self.assertEqual(client.calls, 2)
-        self.assertNotIn("AVATAR", reply)
+        self.assertNotIn("?", reply)
 
 
 if __name__ == "__main__":
