@@ -3,12 +3,14 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from fb_avatar_live.core import (
     CombinedCommentSource,
     Comment,
     CommentStore,
     ContinuousSalesCommentSource,
+    ExternalLLM,
     SalesDemoLLM,
     split_utterances,
 )
@@ -59,6 +61,56 @@ class CoreTests(unittest.TestCase):
         second_script = asyncio.run(llm.reply([second_comment]))
         self.assertTrue(first_script)
         self.assertNotEqual(first_script, second_script)
+
+    def test_sales_prompt_continues_without_repeated_acknowledgement(self) -> None:
+        import asyncio
+
+        class Client:
+            def __init__(self):
+                self.requests = []
+
+            async def post(self, url, **kwargs):
+                self.requests.append(kwargs["json"])
+                content = (
+                    "Dạ, Đầu tiên mình phân loại quần áo sáng màu và tối màu trước khi giặt "
+                    "để tiện chọn cách giặt phù hợp, sau đó đọc hướng dẫn trên nhãn từng món. "
+                    + "Nói thêm một ý " * 30
+                    if len(self.requests) == 1
+                    else "Dạ. Sau đó chọn lượng nước giặt phù hợp."
+                )
+                return SimpleNamespace(
+                    raise_for_status=lambda: None,
+                    json=lambda: {"choices": [{"message": {"content": content}}]},
+                )
+
+        client = Client()
+        settings = SimpleNamespace(
+            comment_source="demo",
+            demo_sales_mode=True,
+            llm_base_url="https://example.test/v1",
+            llm_api_key="test",
+            llm_model="gpt-6-luna",
+            llm_system_prompt="Bán nước giặt.",
+            llm_max_reply_chars=260,
+        )
+        llm = ExternalLLM(settings, client)
+        first = asyncio.run(llm.reply([Comment("1", "Khách", "Hãy tiếp tục giới thiệu sản phẩm")]))
+        second = asyncio.run(llm.reply([Comment("2", "Khách", "Hãy tiếp tục giới thiệu sản phẩm")]))
+
+        self.assertEqual(
+            first,
+            "Đầu tiên mình phân loại quần áo sáng màu và tối màu trước khi giặt "
+            "để tiện chọn cách giặt phù hợp, sau đó đọc hướng dẫn trên nhãn từng món.",
+        )
+        self.assertEqual(second, "Sau đó chọn lượng nước giặt phù hợp.")
+        first_prompt = client.requests[0]["messages"][1]["content"]
+        second_prompt = client.requests[1]["messages"][1]["content"]
+        self.assertNotIn("Hãy tiếp tục giới thiệu sản phẩm", first_prompt)
+        self.assertIn(first, second_prompt)
+        self.assertEqual(client.requests[0]["reasoning_effort"], "none")
+        self.assertEqual(client.requests[0]["max_completion_tokens"], 512)
+        self.assertNotEqual(first_prompt.split("Góc gợi ý cho lượt này: ")[1].split(". Có thể")[0],
+                            second_prompt.split("Góc gợi ý cho lượt này: ")[1].split(". Có thể")[0])
 
 
 if __name__ == "__main__":
