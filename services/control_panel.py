@@ -492,14 +492,17 @@ async def stop_live() -> dict:
 async def test_live(payload: TestPayload) -> dict:
     from fb_avatar_live.core import Comment, CommentStore
 
+    message = payload.message.strip()
+    if not message:
+        raise HTTPException(status_code=422, detail="Nhập bình luận trước khi gửi")
     values = env_file.read()
     store = CommentStore(Path(values.get("DATA_DIR", ROOT / "data")) / "comments.sqlite3")
     try:
         identifier = f"dashboard-{uuid.uuid4().hex}"
-        await asyncio.to_thread(store.add, [Comment(identifier, "Dashboard", payload.message.strip())])
+        await asyncio.to_thread(store.add, [Comment(identifier, "Bạn (xem thử)", message)])
     finally:
         store.close()
-    return {"ok": True, "message": "Đã đưa câu thử vào hàng đợi"}
+    return {"ok": True, "message": "Đã gửi bình luận vào luồng; avatar sẽ trả lời sau các đoạn đã dựng sẵn"}
 
 
 @app.api_route("/preview/{path:path}", methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"])

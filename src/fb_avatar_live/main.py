@@ -8,7 +8,6 @@ import httpx
 from .config import Settings
 from .core import (
     CombinedCommentSource,
-    ContinuousSalesCommentSource,
     DemoCommentSource,
     ExternalLLM,
     FacebookCommentSource,
@@ -36,8 +35,6 @@ async def async_main() -> None:
             source = TikTokCommentSource(settings)
         elif settings.comment_source == "both":
             source = CombinedCommentSource(FacebookCommentSource(settings, client), TikTokCommentSource(settings))
-        elif settings.demo_sales_mode:
-            source = ContinuousSalesCommentSource()
         else:
             source = DemoCommentSource(settings.demo_comments_file)
         llm = (

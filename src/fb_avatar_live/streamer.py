@@ -154,7 +154,7 @@ class SegmentStreamer:
         try:
             return source_queue.get_nowait(), False
         except queue.Empty:
-            return None, True
+            return None, False
 
     def _decode_video(self, path: Path, descriptor: int) -> None:
         process = subprocess.Popen(

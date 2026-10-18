@@ -9,8 +9,8 @@ from fb_avatar_live.core import (
     CombinedCommentSource,
     Comment,
     CommentStore,
-    ContinuousSalesCommentSource,
     ExternalLLM,
+    Pipeline,
     SalesDemoLLM,
     split_utterances,
 )
@@ -35,6 +35,14 @@ class CoreTests(unittest.TestCase):
             self.assertEqual([item.id for item in store.pending(10)], ["2"])
             store.close()
 
+    def test_dashboard_comment_goes_before_old_sales_prompts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = CommentStore(Path(directory) / "state.sqlite3")
+            store.add([Comment("sales-demo-old", "Demo", "Tiếp tục"), Comment("viewer-1", "An", "Chào")])
+            store.add([Comment("dashboard-1", "Bạn", "Bao tiền vậy?")])
+            self.assertEqual([item.id for item in store.pending(2)], ["dashboard-1", "viewer-1"])
+            store.close()
+
     def test_combined_comment_source_merges_channels(self) -> None:
         class Source:
             def __init__(self, comment: Comment):
@@ -51,16 +59,61 @@ class CoreTests(unittest.TestCase):
     def test_sales_demo_keeps_producing_unique_content(self) -> None:
         import asyncio
 
-        source = ContinuousSalesCommentSource()
-        first_comment = asyncio.run(source.fetch())[0]
-        second_comment = asyncio.run(source.fetch())[0]
-        self.assertNotEqual(first_comment.id, second_comment.id)
-
         llm = SalesDemoLLM()
-        first_script = asyncio.run(llm.reply([first_comment]))
-        second_script = asyncio.run(llm.reply([second_comment]))
+        first_script = asyncio.run(llm.reply([]))
+        second_script = asyncio.run(llm.reply([]))
         self.assertTrue(first_script)
         self.assertNotEqual(first_script, second_script)
+
+    def test_sales_demo_prefetches_and_answers_viewer_before_more_sales(self) -> None:
+        import asyncio
+        import contextlib
+        import queue
+
+        class LLM:
+            def __init__(self):
+                self.calls = []
+
+            async def reply(self, comments):
+                self.calls.append(comments)
+                return "Một câu ngắn để phát."
+
+        async def check() -> None:
+            with tempfile.TemporaryDirectory() as directory:
+                pipeline = Pipeline.__new__(Pipeline)
+                pipeline.settings = SimpleNamespace(
+                    fb_batch_seconds=0.01, comment_source="demo", demo_sales_mode=True,
+                    fb_batch_size=8, stream_prebuffer_segments=2, queue_size=8, speech_chunk_chars=100,
+                )
+                pipeline.store = CommentStore(Path(directory) / "state.sqlite3")
+                pipeline.text_queue = asyncio.Queue()
+                pipeline.audio_queue = asyncio.Queue()
+                pipeline.synthesizing = 0
+                pipeline.rendering = 0
+                pipeline.streamer = SimpleNamespace(video_queue=queue.Queue())
+                pipeline.llm = LLM()
+                task = asyncio.create_task(pipeline.create_replies())
+                try:
+                    async def wait_for_calls(count):
+                        for _ in range(100):
+                            if len(pipeline.llm.calls) >= count:
+                                return
+                            await asyncio.sleep(0.01)
+                        self.fail(f"Expected {count} LLM calls")
+
+                    await wait_for_calls(3)
+                    self.assertEqual(len(pipeline.llm.calls), 3)
+                    self.assertTrue(all(not call for call in pipeline.llm.calls))
+                    pipeline.store.add([Comment("dashboard-1", "Bạn", "Bao tiền vậy?")])
+                    await wait_for_calls(4)
+                    self.assertEqual(pipeline.llm.calls[3][0].message, "Bao tiền vậy?")
+                finally:
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
+                    pipeline.store.close()
+
+        asyncio.run(check())
 
     def test_sales_prompt_continues_without_repeated_acknowledgement(self) -> None:
         import asyncio
@@ -94,8 +147,8 @@ class CoreTests(unittest.TestCase):
             llm_max_reply_chars=260,
         )
         llm = ExternalLLM(settings, client)
-        first = asyncio.run(llm.reply([Comment("1", "Khách", "Hãy tiếp tục giới thiệu sản phẩm")]))
-        second = asyncio.run(llm.reply([Comment("2", "Khách", "Hãy tiếp tục giới thiệu sản phẩm")]))
+        first = asyncio.run(llm.reply([]))
+        second = asyncio.run(llm.reply([]))
 
         self.assertEqual(
             first,
@@ -111,6 +164,12 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(client.requests[0]["max_completion_tokens"], 512)
         self.assertNotEqual(first_prompt.split("Góc gợi ý cho lượt này: ")[1].split(". Có thể")[0],
                             second_prompt.split("Góc gợi ý cho lượt này: ")[1].split(". Có thể")[0])
+
+        asyncio.run(llm.reply([Comment("dashboard-1", "Bạn", "Bao tiền vậy?")]))
+        viewer_prompt = client.requests[2]["messages"][1]["content"]
+        self.assertIn("Bao tiền vậy?", viewer_prompt)
+        self.assertIn("Trả lời trực tiếp", viewer_prompt)
+        self.assertNotIn("Góc gợi ý cho lượt này", viewer_prompt)
 
 
 if __name__ == "__main__":

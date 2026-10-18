@@ -215,7 +215,9 @@ $('#stop-live').onclick = async () => {
   catch (error) { toast(error.message,true); }
 };
 $('#test-live').onclick = async () => {
-  try { const data=await api('/api/live/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:$('#test-message').value})}); toast(data.message); }
+  const message = $('#test-message').value.trim();
+  if (!message) { toast('Nhập bình luận trước khi gửi', true); return; }
+  try { const data=await api('/api/live/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message})}); $('#test-message').value=''; toast(data.message); }
   catch(error){toast(error.message,true)}
 };
 

@@ -52,7 +52,7 @@ class StreamerOutputTests(unittest.TestCase):
             streamer._decode_video(Path("segment.mp4"), 1)
         self.assertEqual(streamer.idle_video, b"b" * 6)
 
-    def test_segments_wait_for_prebuffer_and_rebuffer_after_underrun(self):
+    def test_segments_wait_for_initial_prebuffer_then_resume_after_underrun(self):
         streamer = self._streamer("rtsp://127.0.0.1:8554/avatar")
         segments: queue.Queue[Path] = queue.Queue()
         segments.put(Path("one.mp4"))
@@ -67,7 +67,9 @@ class StreamerOutputTests(unittest.TestCase):
         self.assertFalse(buffering)
 
         self.assertEqual(streamer._next_segment(segments, buffering)[0], Path("two.mp4"))
-        self.assertEqual(streamer._next_segment(segments, buffering), (None, True))
+        self.assertEqual(streamer._next_segment(segments, buffering), (None, False))
+        segments.put(Path("three.mp4"))
+        self.assertEqual(streamer._next_segment(segments, False), (Path("three.mp4"), False))
 
 
 if __name__ == "__main__":
