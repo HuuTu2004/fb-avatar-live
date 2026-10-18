@@ -6,6 +6,7 @@ import queue
 import subprocess
 import threading
 import time
+from collections import deque
 from pathlib import Path
 
 from .config import Settings
@@ -22,16 +23,43 @@ class SegmentStreamer:
         self.thread: threading.Thread | None = None
         self.pending_lock = threading.Lock()
         self.pending_streams: dict[Path, int] = {}
+        self.sales_paths: set[Path] = set()
         self.stream_dir = settings.data_dir / "stream"
         self.idle_mp4 = self.stream_dir / "idle.mp4"
         self.idle_video = b""
         self.idle_audio = b""
 
-    def enqueue(self, path: Path) -> None:
-        with self.pending_lock:
-            self.pending_streams[path] = 2
-        self.video_queue.put(path)
-        self.audio_queue.put(path)
+    def enqueue(self, path: Path, is_sales: bool = False) -> None:
+        while not self.stop_event.is_set():
+            with self.pending_lock:
+                if not self.video_queue.full() and not self.audio_queue.full():
+                    self.pending_streams[path] = 2
+                    if is_sales:
+                        self.sales_paths.add(path)
+                    self.video_queue.put_nowait(path)
+                    self.audio_queue.put_nowait(path)
+                    return
+            time.sleep(0.02)
+        raise RuntimeError("Streamer stopped before segment could be queued")
+
+    def drop_pending_sales(self, keep_bridge: bool = True) -> None:
+        # Drop only clips still queued in both tracks; a clip already claimed by
+        # either feeder must finish on both tracks to preserve lip sync.
+        with self.pending_lock, self.video_queue.mutex, self.audio_queue.mutex:
+            common = self.sales_paths & set(self.video_queue.queue) & set(self.audio_queue.queue)
+            # Keep one prepared clip only until the viewer reply is ready.
+            bridge = next((path for path in self.video_queue.queue if path in common), None) if keep_bridge else None
+            discard = common - {bridge} if bridge is not None else common
+            if not discard:
+                return
+            for source in (self.video_queue, self.audio_queue):
+                source.queue = deque(path for path in source.queue if path not in discard)
+                source.unfinished_tasks -= len(discard)
+                source.not_full.notify_all()
+            for path in discard:
+                self.pending_streams.pop(path, None)
+                self.sales_paths.discard(path)
+                path.unlink(missing_ok=True)
 
     def start(self) -> None:
         if self.thread and self.thread.is_alive():
@@ -144,6 +172,7 @@ class SegmentStreamer:
                 self.pending_streams[path] = remaining
                 return
             self.pending_streams.pop(path, None)
+            self.sales_paths.discard(path)
         path.unlink(missing_ok=True)
 
     def _next_segment(

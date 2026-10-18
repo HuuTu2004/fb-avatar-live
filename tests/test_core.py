@@ -109,7 +109,8 @@ class CoreTests(unittest.TestCase):
                 pipeline.audio_queue = asyncio.Queue()
                 pipeline.synthesizing = 0
                 pipeline.rendering = 0
-                pipeline.streamer = SimpleNamespace(video_queue=queue.Queue())
+                pipeline.sales_generation = 0
+                pipeline.streamer = SimpleNamespace(video_queue=queue.Queue(), drop_pending_sales=lambda: None)
                 pipeline.llm = LLM()
                 task = asyncio.create_task(pipeline.create_replies())
                 try:
@@ -123,9 +124,16 @@ class CoreTests(unittest.TestCase):
                     await wait_for_calls(3)
                     self.assertEqual(len(pipeline.llm.calls), 3)
                     self.assertTrue(all(not call for call in pipeline.llm.calls))
-                    pipeline.store.add([Comment("dashboard-1", "Bạn", "Bao tiền vậy?")])
-                    await wait_for_calls(4)
+                    pipeline.store.add([
+                        Comment("dashboard-1", "Bạn", "Bao tiền vậy?"),
+                        Comment("dashboard-2", "Bạn", "Giặt tay dùng thế nào?"),
+                    ])
+                    await wait_for_calls(5)
                     self.assertEqual(pipeline.llm.calls[3][0].message, "Bao tiền vậy?")
+                    self.assertEqual(pipeline.llm.calls[4][0].message, "Giặt tay dùng thế nào?")
+                    self.assertEqual(pipeline.text_queue.qsize(), 2)
+                    self.assertFalse(pipeline.text_queue.get_nowait().is_sales)
+                    self.assertFalse(pipeline.text_queue.get_nowait().is_sales)
                 finally:
                     task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
@@ -189,6 +197,58 @@ class CoreTests(unittest.TestCase):
         self.assertIn("Bao tiền vậy?", viewer_prompt)
         self.assertIn("Trả lời trực tiếp", viewer_prompt)
         self.assertNotIn("Góc gợi ý cho lượt này", viewer_prompt)
+
+    def test_sales_reply_retries_near_duplicate(self) -> None:
+        import asyncio
+
+        class Client:
+            def __init__(self):
+                self.calls = 0
+
+            async def post(self, *args, **kwargs):
+                self.calls += 1
+                reply = (
+                    "Hãy phân loại quần áo sáng màu trước khi giặt để giữ màu đẹp hơn."
+                    if self.calls < 3 else
+                    "Với mẻ đồ ít, hãy cân nhắc lượng nước giặt vừa đủ theo hướng dẫn trên nhãn."
+                )
+                return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"choices": [{"message": {"content": reply}}]})
+
+        settings = SimpleNamespace(
+            comment_source="demo", demo_sales_mode=True, llm_base_url="https://example.test/v1",
+            llm_api_key="test", llm_model="gpt-6-luna", llm_system_prompt="Bán nước giặt.",
+            llm_max_reply_chars=260,
+        )
+        client = Client()
+        llm = ExternalLLM(settings, client)
+        first = asyncio.run(llm.reply([]))
+        second = asyncio.run(llm.reply([]))
+        self.assertNotEqual(first, second)
+        self.assertEqual(client.calls, 3)
+
+    def test_sales_style_without_product_name_retries_brand_mention(self) -> None:
+        import asyncio
+
+        class Client:
+            def __init__(self):
+                self.calls = 0
+
+            async def post(self, *args, **kwargs):
+                self.calls += 1
+                reply = "Hãy xem túi AVATAR nhé." if self.calls == 1 else "Phân loại đồ sáng và tối trước khi giặt để dễ chăm từng mẻ."
+                return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"choices": [{"message": {"content": reply}}]})
+
+        settings = SimpleNamespace(
+            comment_source="demo", demo_sales_mode=True, llm_base_url="https://example.test/v1",
+            llm_api_key="test", llm_model="gpt-6-luna",
+            llm_system_prompt="Giới thiệu túi nước giặt xả AVATAR.", llm_max_reply_chars=260,
+        )
+        client = Client()
+        llm = ExternalLLM(settings, client)
+        llm.remaining_styles = ["Nói một mẹo; không đặt câu hỏi, không nhắc tên sản phẩm hay lời mời mua."]
+        reply = asyncio.run(llm.reply([]))
+        self.assertEqual(client.calls, 2)
+        self.assertNotIn("AVATAR", reply)
 
 
 if __name__ == "__main__":

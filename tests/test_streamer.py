@@ -1,6 +1,8 @@
 import unittest
 import io
 import queue
+import tempfile
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -70,6 +72,42 @@ class StreamerOutputTests(unittest.TestCase):
         self.assertEqual(streamer._next_segment(segments, buffering), (None, False))
         segments.put(Path("three.mp4"))
         self.assertEqual(streamer._next_segment(segments, False), (Path("three.mp4"), False))
+
+    def test_viewer_comment_discards_only_sales_clips_waiting_on_both_tracks(self):
+        streamer = self._streamer("rtsp://127.0.0.1:8554/avatar")
+        with tempfile.TemporaryDirectory() as directory:
+            paths = [Path(directory) / f"{name}.mp4" for name in ("playing", "old-one", "old-two")]
+            for path in paths:
+                path.write_bytes(b"clip")
+                streamer.enqueue(path, is_sales=True)
+            self.assertEqual(streamer.audio_queue.get_nowait(), paths[0])
+            streamer.drop_pending_sales()
+            self.assertEqual(list(streamer.video_queue.queue), [paths[0], paths[1]])
+            self.assertEqual(list(streamer.audio_queue.queue), [paths[1]])
+            self.assertTrue(paths[0].exists())
+            self.assertTrue(paths[1].exists())
+            self.assertFalse(paths[2].exists())
+            streamer.drop_pending_sales(keep_bridge=False)
+            self.assertEqual(list(streamer.video_queue.queue), [paths[0]])
+            self.assertEqual(list(streamer.audio_queue.queue), [])
+            self.assertFalse(paths[1].exists())
+
+    def test_full_queues_accept_viewer_clip_after_sales_are_dropped(self):
+        streamer = self._streamer("rtsp://127.0.0.1:8554/avatar")
+        with tempfile.TemporaryDirectory() as directory:
+            sales = [Path(directory) / f"sales-{index}.mp4" for index in range(3)]
+            for path in sales:
+                path.write_bytes(b"clip")
+                streamer.enqueue(path, is_sales=True)
+            viewer = Path(directory) / "viewer.mp4"
+            viewer.write_bytes(b"clip")
+            writer = threading.Thread(target=streamer.enqueue, args=(viewer,))
+            writer.start()
+            streamer.drop_pending_sales(keep_bridge=False)
+            writer.join(timeout=1)
+            self.assertFalse(writer.is_alive())
+            self.assertEqual(list(streamer.video_queue.queue), [viewer])
+            self.assertEqual(list(streamer.audio_queue.queue), [viewer])
 
 
 if __name__ == "__main__":

@@ -34,6 +34,8 @@ class Comment:
 class TextJob:
     id: str
     text: str
+    is_sales: bool = False
+    generation: int = 0
 
 
 @dataclass(frozen=True)
@@ -41,6 +43,8 @@ class AudioJob:
     id: str
     text: str
     path: Path
+    is_sales: bool = False
+    generation: int = 0
 
 
 def split_utterances(text: str, max_chars: int = 120) -> list[str]:
@@ -266,31 +270,56 @@ class ExternalLLM:
         "cách xử lý đồ cần giặt sau một ngày bận rộn",
         "một cách dẫn khác về sản phẩm đang xuất hiện trên hình",
     )
+    sales_styles = (
+        "Kể một tình huống đời thường; không đặt câu hỏi, không nhắc tên sản phẩm hay lời mời mua.",
+        "Nói một mẹo giặt giũ ngắn; không đặt câu hỏi, không nhắc tên sản phẩm hay lời mời mua.",
+        "Dẫn tiếp từ ý trước bằng một quan sát mới; không đặt câu hỏi, không nhắc tên sản phẩm hay lời mời mua.",
+        "Nói một bước sử dụng hoặc chăm đồ; không đặt câu hỏi.",
+        "Giới thiệu điều chắc chắn thấy trên hình; không đặt câu hỏi.",
+        "Nêu một thói quen giặt giũ thường gặp; không đặt câu hỏi, không nhắc tên sản phẩm hay lời mời mua.",
+        "Đặt một câu hỏi ngắn để mời người xem bình luận.",
+        "Hỏi người xem về nhu cầu giặt giũ của họ bằng một câu tự nhiên.",
+    )
 
     def __init__(self, settings: Settings, client: httpx.AsyncClient):
         self.settings = settings
         self.client = client
-        self.recent_replies: deque[str] = deque(maxlen=3)
-        self.recent_angles: deque[str] = deque(maxlen=2)
+        self.recent_replies: deque[str] = deque(maxlen=8)
+        self.remaining_angles: list[str] = []
+        self.remaining_styles: list[str] = []
+        self.product_labels = set(re.findall(r"\b[A-Z][A-Z0-9-]{3,}\b", settings.llm_system_prompt))
+
+    @staticmethod
+    def _too_similar(text: str, previous: str) -> bool:
+        def words(value: str) -> set[str]:
+            return set(re.findall(r"\w+", value.casefold()))
+
+        current, earlier = words(text), words(previous)
+        return bool(current and earlier) and len(current & earlier) / len(current | earlier) >= 0.62
 
     async def reply(self, comments: list[Comment]) -> str:
         sales_mode = self.settings.comment_source == "demo" and self.settings.demo_sales_mode
         if sales_mode and not comments:
-            choices = [angle for angle in self.sales_angles if angle not in self.recent_angles]
-            angle = random.choice(choices)
+            if not self.remaining_angles:
+                self.remaining_angles = random.sample(list(self.sales_angles), len(self.sales_angles))
+            angle = self.remaining_angles.pop()
+            if not self.remaining_styles:
+                self.remaining_styles = random.sample(list(self.sales_styles), len(self.sales_styles))
+            style = self.remaining_styles.pop()
             user_prompt = (
                 "Đang tiếp tục buổi giới thiệu nước giặt. Hãy nói một lượt mới bằng tiếng Việt, "
                 "tổng dưới 200 ký tự, thành 2 câu nói tự nhiên để phát thành một clip. "
                 "Góc gợi ý cho lượt này: " + angle + ". Có thể phát triển ý khác nếu hợp mạch. "
+                "Kiểu nói bắt buộc cho lượt này: " + style + " "
                 "Nối tiếp nội dung trước mà không nhắc lại ý hoặc câu mở đầu. "
-                "Giữ mạch bán nước giặt: xen kẽ câu hỏi về nhu cầu, tình huống giặt giũ, "
+                "Giữ mạch bán nước giặt qua nhu cầu, tình huống giặt giũ, "
                 "cách dùng và lời mời tìm hiểu sản phẩm. Không cần nhắc tên sản phẩm trong mọi lượt; "
                 "đừng kết mỗi lượt bằng một câu giới thiệu tên sản phẩm. "
                 "Không lặp lời mời, hành động hay cụm từ đã dùng trong các lượt gần đây. "
                 "Không mở đầu bằng 'dạ', lời chào, hoặc câu đáp bình luận; "
                 "không nói rằng đang chọn chủ đề hay đang tạo kịch bản. "
                 "Chỉ dùng thông tin chắc chắn; không bịa giá, ưu đãi, thành phần hay công dụng. "
-                "Các lượt vừa nói: " + json.dumps(list(self.recent_replies), ensure_ascii=False)
+                "Các lượt vừa nói (không lặp ý hoặc cách diễn đạt): " + json.dumps(list(self.recent_replies), ensure_ascii=False)
             )
         else:
             payload = [{"author": c.author, "comment": c.message} for c in comments]
@@ -312,14 +341,39 @@ class ExternalLLM:
         }
         if self.settings.llm_model in {"gpt-6-luna", "gpt-6-sol"}:
             request_body["reasoning_effort"] = "none"
-        response = await self.client.post(
-            f"{self.settings.llm_base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {self.settings.llm_api_key}"},
-            json=request_body,
-        )
-        response.raise_for_status()
-        text = str(response.json()["choices"][0]["message"]["content"]).strip()
-        text = re.sub(r"[`*_#]", "", text)
+        for attempt in range(3 if sales_mode and not comments else 1):
+            response = await self.client.post(
+                f"{self.settings.llm_base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {self.settings.llm_api_key}"},
+                json=request_body,
+            )
+            response.raise_for_status()
+            text = str(response.json()["choices"][0]["message"]["content"]).strip()
+            text = re.sub(r"[`*_#]", "", text)
+            repeated = sales_mode and not comments and any(
+                self._too_similar(text, old) for old in self.recent_replies
+            )
+            wrong_style = sales_mode and not comments and (
+                ("không đặt câu hỏi" in style and "?" in text)
+                or ("không nhắc tên sản phẩm" in style and any(
+                    re.search(rf"\b{re.escape(label)}\b", text, flags=re.IGNORECASE)
+                    for label in self.product_labels
+                ))
+            )
+            if (repeated or wrong_style) and attempt < 2:
+                request_body["messages"][1]["content"] += (
+                    "\nLượt vừa tạo bị lặp ý hoặc sai kiểu nói. Hãy đổi hẳn tình huống, cách mở đầu và tuân thủ kiểu nói bắt buộc."
+                )
+                continue
+            break
+        if sales_mode and not comments and (repeated or wrong_style):
+            alternatives = [
+                script for script in SalesDemoLLM.scripts
+                if "không đặt câu hỏi" not in style or "?" not in script
+                if not any(self._too_similar(script, old) for old in self.recent_replies)
+            ]
+            if alternatives:
+                text = random.choice(alternatives)
         if sales_mode:
             text = re.sub(r"^(?:dạ\b[\s,.:;!?]*)+", "", text, flags=re.IGNORECASE).strip()
             limit = self.settings.llm_max_reply_chars
@@ -334,8 +388,6 @@ class ExternalLLM:
             spoken_text = text.strip()
             if spoken_text:
                 self.recent_replies.append(spoken_text)
-                if not comments:
-                    self.recent_angles.append(angle)
         return text[: self.settings.llm_max_reply_chars].strip()
 
 
@@ -365,7 +417,7 @@ class ZeroTTSEngine:
         path = output_dir / f"{job.id}.wav"
         audio = self.model.synthesize(normalize_vi_text(job.text), voice=self.settings.zerotts_voice)
         self.model.save_audio(audio, path)
-        return AudioJob(job.id, job.text, path)
+        return AudioJob(job.id, job.text, path, job.is_sales, job.generation)
 
 
 class MuseTalkClient:
@@ -411,6 +463,21 @@ class Pipeline:
         self.audio_queue: asyncio.Queue[AudioJob] = asyncio.Queue(settings.queue_size)
         self.synthesizing = 0
         self.rendering = 0
+        self.sales_generation = 0
+
+    def _discard_queued_sales(self) -> None:
+        for source in (self.text_queue, self.audio_queue):
+            retained = []
+            while not source.empty():
+                job = source.get_nowait()
+                source.task_done()
+                if job.is_sales:
+                    if isinstance(job, AudioJob):
+                        job.path.unlink(missing_ok=True)
+                else:
+                    retained.append(job)
+            for job in retained:
+                source.put_nowait(job)
 
     async def poll_comments(self) -> None:
         while True:
@@ -428,6 +495,10 @@ class Pipeline:
             await asyncio.sleep(self.settings.fb_batch_seconds)
             sales_mode = self.settings.comment_source == "demo" and self.settings.demo_sales_mode
             comments = await asyncio.to_thread(self.store.pending, 1 if sales_mode else self.settings.fb_batch_size)
+            if comments and sales_mode:
+                self.sales_generation += 1
+                self._discard_queued_sales()
+                await asyncio.to_thread(self.streamer.drop_pending_sales)
             if not comments:
                 if not sales_mode:
                     continue
@@ -437,16 +508,22 @@ class Pipeline:
                     continue
             elif not sales_mode and self.text_queue.qsize() >= self.settings.queue_size // 2:
                 continue
+            generation = self.sales_generation
             try:
                 reply = await self.llm.reply(comments)
                 chunks = split_utterances(reply, self.settings.speech_chunk_chars)
                 if not chunks:
                     raise ValueError("LLM returned an empty reply")
                 response_id = uuid.uuid4().hex
+                if sales_mode and not comments and self.sales_generation != generation:
+                    continue
                 for index, chunk in enumerate(chunks):
-                    await self.text_queue.put(TextJob(f"{response_id}-{index:02d}", chunk))
+                    await self.text_queue.put(TextJob(f"{response_id}-{index:02d}", chunk, sales_mode and not comments, generation))
                 await asyncio.to_thread(self.store.mark_processed, [comment.id for comment in comments])
-                log.info("Queued reply in %d speech chunks", len(chunks))
+                if comments:
+                    log.info("Queued viewer reply in %d speech chunks for %s", len(chunks), [comment.id for comment in comments])
+                else:
+                    log.info("Queued sales reply in %d speech chunks: %s", len(chunks), reply)
             except Exception:
                 log.exception("LLM reply failed; comments remain pending")
 
@@ -461,6 +538,9 @@ class Pipeline:
                 started = time.perf_counter()
                 audio = await asyncio.to_thread(self.tts.synthesize, job, output_dir)
                 log.info("ZeroTTS synthesized %.2fs of audio in %.2fs", sf.info(audio.path).duration, time.perf_counter() - started)
+                if job.is_sales and job.generation != self.sales_generation:
+                    audio.path.unlink(missing_ok=True)
+                    continue
                 await self.audio_queue.put(audio)
                 log.info("Synthesized %s", audio.path.name)
             except Exception:
@@ -475,7 +555,13 @@ class Pipeline:
             self.rendering += 1
             try:
                 video = await self.renderer.render(job)
-                await asyncio.to_thread(self.streamer.enqueue, video)
+                if job.is_sales and job.generation != self.sales_generation:
+                    if self.streamer.video_queue.qsize():
+                        video.unlink(missing_ok=True)
+                        continue
+                if not job.is_sales:
+                    await asyncio.to_thread(self.streamer.drop_pending_sales, False)
+                await asyncio.to_thread(self.streamer.enqueue, video, is_sales=job.is_sales)
                 log.info("Queued rendered segment %s", video.name)
             except Exception:
                 log.exception("MuseTalk render failed for %s", job.id)
