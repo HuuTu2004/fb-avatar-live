@@ -36,17 +36,22 @@ function updateStatus(data) {
   $('#metric-pipeline').textContent = serviceLabel(data.services.pipeline);
   $('#metric-preview').textContent = data.preview_ready ? 'Có tín hiệu' : 'Chờ tín hiệu';
   $('#metric-groq').textContent = data.configured.groq ? data.groq_model || 'Đã cấu hình' : 'Chưa cấu hình';
-  $('#metric-facebook').textContent = data.configured.facebook && data.configured.rtmps ? 'Sẵn sàng' : 'Thiếu cấu hình';
+  const channelCount = Number(data.configured.facebook_stream) + Number(data.configured.tiktok_stream);
+  $('#metric-channels').textContent = channelCount ? `${channelCount} kênh sẵn sàng` : 'Thiếu cấu hình';
   $('#global-dot').classList.toggle('ok', running);
   $('#global-text').textContent = running ? 'Pipeline đang chạy' : 'Pipeline đang dừng';
 
   const checks = [
-    ['Groq API', data.configured.groq], ['Voice', data.configured.voice],
-    ['Avatar', data.configured.avatar], ['Facebook comments', data.configured.facebook],
-    ['RTMPS', data.configured.rtmps], ['MuseTalk', data.services.musetalk === 'RUNNING']
+    ['Groq API', data.configured.groq], ['Voice', data.configured.voice], ['Avatar', data.configured.avatar]
   ];
+  if (['facebook', 'both'].includes(data.comment_source)) checks.push(['Facebook comments', data.configured.facebook]);
+  if (['tiktok', 'both'].includes(data.comment_source)) checks.push(['TikTok comments', data.configured.tiktok]);
+  checks.push(['Đích phát', data.configured.facebook_stream || data.configured.tiktok_stream]);
+  checks.push(['MuseTalk', data.services.musetalk === 'RUNNING']);
   $('#checklist').innerHTML = checks.map(([name, ok]) => `<div class="check"><b>${name}</b><i class="${ok ? 'ok' : ''}">${ok ? 'Sẵn sàng' : 'Chưa xong'}</i></div>`).join('');
   $('#fb-object').value = data.fb_object_id || '';
+  $('#comment-source').value = data.comment_source || 'facebook';
+  $('#tiktok-user').value = data.tiktok_unique_id ? `@${data.tiktok_unique_id}` : '';
   $('#groq-key-hint').textContent = data.has_groq_key ? 'Đã có key lưu trên máy. Giữ trống để tiếp tục dùng.' : 'Key chỉ được lưu trong .env trên máy Vast.';
   if (data.groq_model && ![...$('#groq-model').options].some(o => o.value === data.groq_model)) {
     $('#groq-model').add(new Option(data.groq_model, data.groq_model));
@@ -159,10 +164,12 @@ $('#save-live').onclick = async () => {
   const button = $('#save-live'); busy(button, true);
   try {
     await api('/api/live/save', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      comment_source:$('#comment-source').value,
       fb_object_id:$('#fb-object').value, fb_page_access_token:$('#fb-token').value,
-      facebook_stream_url:$('#fb-stream').value, poll_seconds:Number($('#poll-seconds').value), batch_seconds:Number($('#batch-seconds').value)
+      facebook_stream_url:$('#fb-stream').value, tiktok_unique_id:$('#tiktok-user').value,
+      tiktok_stream_url:$('#tiktok-stream').value, poll_seconds:Number($('#poll-seconds').value), batch_seconds:Number($('#batch-seconds').value)
     })});
-    $('#fb-token').value = ''; $('#fb-stream').value = ''; toast('Đã lưu cấu hình Facebook Live'); refreshStatus();
+    $('#fb-token').value = ''; $('#fb-stream').value = ''; $('#tiktok-stream').value = ''; toast('Đã lưu cấu hình kênh Live'); refreshStatus();
   } catch (error) { toast(error.message, true); }
   finally { busy(button, false); }
 };

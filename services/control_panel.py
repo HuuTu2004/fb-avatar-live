@@ -47,9 +47,12 @@ class PreviewPayload(BaseModel):
 
 
 class LivePayload(BaseModel):
+    comment_source: str = Field(default="both", pattern="^(facebook|tiktok|both)$")
     fb_object_id: str
     fb_page_access_token: str = ""
     facebook_stream_url: str = ""
+    tiktok_unique_id: str = ""
+    tiktok_stream_url: str = ""
     poll_seconds: float = Field(default=2, ge=0.5, le=30)
     batch_seconds: float = Field(default=2, ge=0.5, le=30)
 
@@ -119,7 +122,7 @@ class EnvFile:
 env_file = EnvFile(ENV_PATH)
 env_file.ensure()
 os.environ.setdefault("ZEROTTS_VOICES_HOME", str(VOICE_HOME))
-app = FastAPI(title="Facebook Avatar Live Control Panel")
+app = FastAPI(title="Multi-channel Avatar Live Control Panel")
 app.mount("/static", StaticFiles(directory=WEB_ROOT / "static"), name="static")
 proxy_client: httpx.AsyncClient | None = None
 tts_model = None
@@ -177,7 +180,9 @@ def _configured(values: dict[str, str]) -> dict[str, bool]:
         "voice": bool(values.get("ZEROTTS_VOICE")),
         "avatar": Path(values.get("AVATAR_VIDEO", "")).is_file(),
         "facebook": bool(values.get("FB_OBJECT_ID") and values.get("FB_PAGE_ACCESS_TOKEN")),
-        "rtmps": bool(values.get("FACEBOOK_STREAM_URL")),
+        "facebook_stream": bool(values.get("FACEBOOK_STREAM_URL")),
+        "tiktok": bool(values.get("TIKTOK_UNIQUE_ID")),
+        "tiktok_stream": bool(values.get("TIKTOK_STREAM_URL")),
     }
 
 
@@ -196,8 +201,11 @@ async def status() -> dict:
         "voice": values.get("ZEROTTS_VOICE", "maichi"),
         "avatar": values.get("AVATAR_VIDEO", ""),
         "fb_object_id": values.get("FB_OBJECT_ID", ""),
+        "comment_source": values.get("COMMENT_SOURCE", "facebook"),
+        "tiktok_unique_id": values.get("TIKTOK_UNIQUE_ID", ""),
         "has_fb_token": bool(values.get("FB_PAGE_ACCESS_TOKEN")),
-        "has_stream_url": bool(values.get("FACEBOOK_STREAM_URL")),
+        "has_fb_stream_url": bool(values.get("FACEBOOK_STREAM_URL")),
+        "has_tiktok_stream_url": bool(values.get("TIKTOK_STREAM_URL")),
         "groq_model": values.get("LLM_MODEL", ""),
         "has_groq_key": bool(values.get("LLM_API_KEY")),
     }
@@ -415,13 +423,16 @@ async def avatar_file() -> FileResponse:
 async def save_live(payload: LivePayload) -> dict:
     current = env_file.read()
     token = payload.fb_page_access_token.strip() or current.get("FB_PAGE_ACCESS_TOKEN", "")
-    stream = payload.facebook_stream_url.strip() or current.get("FACEBOOK_STREAM_URL", "")
+    facebook_stream = payload.facebook_stream_url.strip() or current.get("FACEBOOK_STREAM_URL", "")
+    tiktok_stream = payload.tiktok_stream_url.strip() or current.get("TIKTOK_STREAM_URL", "")
     env_file.update(
         {
-            "COMMENT_SOURCE": "facebook",
-            "FB_OBJECT_ID": payload.fb_object_id,
+            "COMMENT_SOURCE": payload.comment_source,
+            "FB_OBJECT_ID": payload.fb_object_id.strip(),
             "FB_PAGE_ACCESS_TOKEN": token,
-            "FACEBOOK_STREAM_URL": stream,
+            "FACEBOOK_STREAM_URL": facebook_stream,
+            "TIKTOK_UNIQUE_ID": payload.tiktok_unique_id.strip().lstrip("@"),
+            "TIKTOK_STREAM_URL": tiktok_stream,
             "FB_POLL_SECONDS": str(payload.poll_seconds),
             "FB_BATCH_SECONDS": str(payload.batch_seconds),
             "STREAM_URL": "rtsp://127.0.0.1:8554/avatar",
@@ -435,7 +446,15 @@ async def save_live(payload: LivePayload) -> dict:
 
 def _start_live() -> None:
     values = env_file.read()
-    missing = [name for name, ok in _configured(values).items() if not ok]
+    configured = _configured(values)
+    missing = [name for name in ("groq", "voice", "avatar") if not configured[name]]
+    source = values.get("COMMENT_SOURCE", "facebook")
+    if source in {"facebook", "both"} and not configured["facebook"]:
+        missing.append("facebook comments")
+    if source in {"tiktok", "both"} and not configured["tiktok"]:
+        missing.append("tiktok comments")
+    if not configured["facebook_stream"] and not configured["tiktok_stream"]:
+        missing.append("Facebook or TikTok stream URL")
     if missing:
         raise ValueError("Thiếu cấu hình: " + ", ".join(missing))
     for name in SERVICES:

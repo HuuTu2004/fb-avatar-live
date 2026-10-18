@@ -6,7 +6,16 @@ import logging
 import httpx
 
 from .config import Settings
-from .core import DemoCommentSource, ExternalLLM, FacebookCommentSource, MuseTalkClient, Pipeline, ZeroTTSEngine
+from .core import (
+    CombinedCommentSource,
+    DemoCommentSource,
+    ExternalLLM,
+    FacebookCommentSource,
+    MuseTalkClient,
+    Pipeline,
+    TikTokCommentSource,
+    ZeroTTSEngine,
+)
 from .streamer import SegmentStreamer
 
 
@@ -19,11 +28,14 @@ async def async_main() -> None:
     )
     timeout = httpx.Timeout(60, connect=15)
     async with httpx.AsyncClient(timeout=timeout) as client:
-        source = (
-            FacebookCommentSource(settings, client)
-            if settings.comment_source == "facebook"
-            else DemoCommentSource(settings.demo_comments_file)
-        )
+        if settings.comment_source == "facebook":
+            source = FacebookCommentSource(settings, client)
+        elif settings.comment_source == "tiktok":
+            source = TikTokCommentSource(settings)
+        elif settings.comment_source == "both":
+            source = CombinedCommentSource(FacebookCommentSource(settings, client), TikTokCommentSource(settings))
+        else:
+            source = DemoCommentSource(settings.demo_comments_file)
         pipeline = Pipeline(
             settings=settings,
             source=source,

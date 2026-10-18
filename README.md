@@ -1,14 +1,16 @@
-# Facebook Live AI Avatar
+# Facebook + TikTok Live AI Avatar
 
 Pipeline chạy liên tục trên một máy Vast.ai:
 
 ```text
-Facebook comments -> SQLite dedupe/batch -> hosted LLM
-                  -> short speech chunks -> ZeroTTS (CPU)
-                  -> persistent MuseTalk 1.5 (GPU)
-                  -> FFmpeg H.264/Opus -> MediaMTX
-                     ├─ WebRTC/WHEP preview in control panel
-                     └─ H.264/AAC forwarder -> Facebook RTMPS
+Facebook Graph API ─┐
+TikTok LIVE Webcast ─┴─> SQLite dedupe/batch -> hosted LLM
+                       -> short speech chunks -> ZeroTTS (CPU)
+                       -> persistent MuseTalk 1.5 (GPU)
+                       -> FFmpeg H.264/Opus -> MediaMTX
+                          ├─ WebRTC/WHEP preview in control panel
+                          ├─ H.264/AAC -> Facebook RTMPS
+                          └─ H.264/AAC -> TikTok RTMP
 ```
 
 MuseTalk và ZeroTTS chạy ở hai môi trường Python riêng. MuseTalk giữ model trong VRAM và nhận từng đoạn audio qua HTTP nội bộ; ZeroTTS, LLM và bộ điều phối chạy trong tiến trình còn lại. FFmpeg luôn phát một idle clip ngắn khi chưa có câu trả lời. MediaMTX cấp preview WebRTC độ trễ thấp và forwarder đổi Opus sang AAC để gửi cùng video H.264 lên Facebook.
@@ -18,7 +20,7 @@ Control panel có bốn khu vực hoạt động trực tiếp với backend:
 1. Dashboard xem WebRTC, trạng thái service, start/stop và đưa câu thử vào hàng đợi.
 2. Groq API kiểm tra key, lấy model hiện có và lưu cấu hình.
 3. Clone voice cài voice pack ZeroTTS, chọn giọng và tổng hợp bản nghe thử.
-4. Avatar & Live tải video, chuẩn hóa 720p/25 FPS, lưu Facebook token và RTMPS URL.
+4. Avatar & Live tải video, chuẩn hóa 720p/25 FPS, chọn nguồn comment và lưu đích Facebook/TikTok.
 
 ## Yêu cầu
 
@@ -26,9 +28,12 @@ Control panel có bốn khu vực hoạt động trực tiếp với backend:
 - Video avatar có mặt nhìn rõ. Một loop idle khoảng 1 giây, đầu/cuối khớp nhau sẽ chuyển cảnh mượt nhất.
 - Facebook Page access token có quyền đọc comment của live video/post mà bạn quản lý. `FB_OBJECT_ID` là ID của live video hoặc post.
 - RTMPS ingest URL lấy từ Facebook Live Producer.
+- TikTok `@username` đang LIVE để đọc chat và RTMP URL + stream key lấy từ TikTok LIVE Center.
 - Groq API key. Backend dùng endpoint OpenAI-compatible `https://api.groq.com/openai/v1`.
 
-Ứng dụng chỉ đọc bình luận và nói trên livestream; nó không đăng câu trả lời trở lại Facebook.
+Ứng dụng chỉ đọc bình luận và nói trên livestream; nó không đăng câu trả lời trở lại Facebook hoặc TikTok.
+
+TikTok hiện không có API công khai chính thức để đọc comment LIVE. Tích hợp này dùng thư viện TikTokLive để đọc Webcast công khai như một người xem, nên có thể cần cập nhật nếu TikTok thay đổi giao thức.
 
 ## Cài trên Vast.ai
 
@@ -53,11 +58,13 @@ Giao diện sẽ hướng dẫn điền Groq, avatar và Facebook. Nếu muốn 
 ```dotenv
 FB_OBJECT_ID=...
 FB_PAGE_ACCESS_TOKEN=...
+TIKTOK_UNIQUE_ID=ten_tai_khoan
 LLM_BASE_URL=https://api.groq.com/openai/v1
 LLM_API_KEY=...
 LLM_MODEL=...
 STREAM_URL=rtsp://127.0.0.1:8554/avatar
 FACEBOOK_STREAM_URL=rtmps://...private-stream-key...
+TIKTOK_STREAM_URL=rtmp://...private-stream-key...
 ```
 
 Không commit `.env`; token Facebook, API key LLM và stream key đều là bí mật.

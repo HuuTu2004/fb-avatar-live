@@ -9,6 +9,7 @@ import sqlite3
 import threading
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -148,6 +149,67 @@ class FacebookCommentSource:
         ]
 
 
+class TikTokCommentSource:
+    """Read public LIVE comments through TikTok's Webcast connection."""
+
+    def __init__(self, settings: Settings):
+        self.unique_id = settings.tiktok_unique_id
+        self._comments: deque[Comment] = deque(maxlen=1000)
+        self._task: asyncio.Task | None = None
+
+    async def _connect(self) -> None:
+        from TikTokLive import TikTokLiveClient
+        from TikTokLive.events import CommentEvent
+
+        while True:
+            client = TikTokLiveClient(unique_id=f"@{self.unique_id}")
+
+            async def on_comment(event: CommentEvent) -> None:
+                message = str(event.comment or "").strip()
+                if not message:
+                    return
+                common = getattr(event, "common", None)
+                message_id = getattr(common, "msg_id", None) or uuid.uuid4().hex
+                user = getattr(event, "user", None)
+                author = getattr(user, "nickname", None) or getattr(user, "unique_id", None) or "Người xem"
+                self._comments.append(Comment(f"tiktok:{message_id}", f"TikTok · {author}", message[:1000]))
+
+            client.add_listener(CommentEvent, on_comment)
+            try:
+                await client.connect(fetch_room_info=False, fetch_gift_info=False)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("TikTok LIVE connection failed; retrying")
+            finally:
+                await client.close()
+            await asyncio.sleep(5)
+
+    async def fetch(self) -> list[Comment]:
+        if self._task is None or self._task.done():
+            if self._task and not self._task.cancelled() and self._task.exception():
+                log.error("TikTok LIVE listener stopped: %s", self._task.exception())
+            self._task = asyncio.create_task(self._connect())
+        comments = list(self._comments)
+        self._comments.clear()
+        return comments
+
+
+class CombinedCommentSource:
+    def __init__(self, *sources: CommentSource):
+        self.sources = sources
+
+    async def fetch(self) -> list[Comment]:
+        batches = await asyncio.gather(*(source.fetch() for source in self.sources), return_exceptions=True)
+        comments: list[Comment] = []
+        for batch in batches:
+            if isinstance(batch, Exception):
+                log.error("Comment source failed: %s", batch)
+            else:
+                comments.extend(batch)
+        return comments
+
+
 class DemoCommentSource:
     def __init__(self, path: Path):
         self.path = path
@@ -273,7 +335,7 @@ class Pipeline:
                 if added:
                     log.info("Stored %d new comments", added)
             except Exception:
-                log.exception("Facebook comment poll failed")
+                log.exception("Comment poll failed")
             await asyncio.sleep(self.settings.fb_poll_seconds)
 
     async def create_replies(self) -> None:

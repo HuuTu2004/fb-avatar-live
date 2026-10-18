@@ -52,6 +52,7 @@ class Settings:
     fb_poll_seconds: float
     fb_batch_seconds: float
     fb_batch_size: int
+    tiktok_unique_id: str
     llm_base_url: str
     llm_api_key: str
     llm_model: str
@@ -88,6 +89,7 @@ class Settings:
             fb_poll_seconds=_number("FB_POLL_SECONDS", 2),
             fb_batch_seconds=_number("FB_BATCH_SECONDS", 3),
             fb_batch_size=_integer("FB_BATCH_SIZE", 8),
+            tiktok_unique_id=os.getenv("TIKTOK_UNIQUE_ID", "").strip().lstrip("@"),
             llm_base_url=os.getenv("LLM_BASE_URL", "").rstrip("/"),
             llm_api_key=os.getenv("LLM_API_KEY", ""),
             llm_model=os.getenv("LLM_MODEL", ""),
@@ -120,13 +122,15 @@ class Settings:
 
     def validate(self) -> None:
         missing = []
-        if self.comment_source == "facebook":
+        if self.comment_source in {"facebook", "both"}:
             if not self.fb_object_id:
                 missing.append("FB_OBJECT_ID")
             if not self.fb_page_access_token:
                 missing.append("FB_PAGE_ACCESS_TOKEN")
-        elif self.comment_source != "demo":
-            raise ValueError("COMMENT_SOURCE must be facebook or demo")
+        if self.comment_source in {"tiktok", "both"} and not self.tiktok_unique_id:
+            missing.append("TIKTOK_UNIQUE_ID")
+        if self.comment_source not in {"facebook", "tiktok", "both", "demo"}:
+            raise ValueError("COMMENT_SOURCE must be facebook, tiktok, both, or demo")
         for name, value in (
             ("LLM_BASE_URL", self.llm_base_url),
             ("LLM_API_KEY", self.llm_api_key),

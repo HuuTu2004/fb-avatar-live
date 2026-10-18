@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fb_avatar_live.core import Comment, CommentStore, split_utterances
+from fb_avatar_live.core import CombinedCommentSource, Comment, CommentStore, split_utterances
 
 
 class CoreTests(unittest.TestCase):
@@ -25,6 +25,19 @@ class CoreTests(unittest.TestCase):
             store.mark_processed(["1"])
             self.assertEqual([item.id for item in store.pending(10)], ["2"])
             store.close()
+
+    def test_combined_comment_source_merges_channels(self) -> None:
+        class Source:
+            def __init__(self, comment: Comment):
+                self.comment = comment
+
+            async def fetch(self) -> list[Comment]:
+                return [self.comment]
+
+        import asyncio
+
+        source = CombinedCommentSource(Source(Comment("facebook:1", "An", "A")), Source(Comment("tiktok:2", "Bình", "B")))
+        self.assertEqual([item.id for item in asyncio.run(source.fetch())], ["facebook:1", "tiktok:2"])
 
 
 if __name__ == "__main__":
