@@ -1,6 +1,7 @@
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 let state = null;
+let previewAudioEnabled = false;
 
 function toast(message, error = false) {
   const box = $('#toast');
@@ -70,9 +71,26 @@ async function refreshStatus(showError = false) {
 
 function loadPreview(force = false) {
   const frame = $('#live-frame');
-  if (force || !frame.src) frame.src = `/preview/avatar?controls=true&muted=true&autoplay=true&playsInline=true&t=${Date.now()}`;
+  if (force || !frame.src) frame.src = `/preview/avatar?controls=true&muted=${!previewAudioEnabled}&autoplay=true&playsInline=true&t=${Date.now()}`;
   frame.classList.add('ready');
   $('#stage-empty').style.display = 'none';
+}
+
+async function enablePreviewAudio(showMessage = false) {
+  const video = $('#live-frame').contentDocument?.querySelector('video');
+  if (!video) {
+    if (showMessage) toast('Preview chưa sẵn sàng, hãy tải lại preview', true);
+    return;
+  }
+  video.muted = false;
+  video.volume = 1;
+  try {
+    await video.play();
+    $('#toggle-audio').textContent = 'Âm thanh đã bật';
+    if (showMessage) toast('Đã bật âm thanh preview');
+  } catch (_) {
+    if (showMessage) toast('Chrome đang chặn âm thanh; hãy bấm biểu tượng loa trên video', true);
+  }
 }
 
 function loadAvatar() {
@@ -103,13 +121,12 @@ $$('.nav').forEach(button => button.addEventListener('click', () => {
 $('#refresh').onclick = () => refreshStatus(true);
 $('#reload-preview').onclick = () => loadPreview(true);
 $('#toggle-audio').onclick = async () => {
-  const video = $('#live-frame').contentDocument?.querySelector('video');
-  if (!video) return toast('Preview chưa sẵn sàng, hãy tải lại preview', true);
-  video.muted = false;
-  video.volume = 1;
-  try { await video.play(); $('#toggle-audio').textContent = 'Âm thanh đã bật'; toast('Đã bật âm thanh preview'); }
-  catch (_) { toast('Chrome đang chặn âm thanh; hãy bấm biểu tượng loa trên video', true); }
+  previewAudioEnabled = true;
+  await enablePreviewAudio(true);
 };
+$('#live-frame').addEventListener('load', () => {
+  if (previewAudioEnabled) setTimeout(() => enablePreviewAudio(), 250);
+});
 $('#show-key').onclick = () => {
   const input = $('#openai-key'); input.type = input.type === 'password' ? 'text' : 'password';
   $('#show-key').textContent = input.type === 'password' ? 'Hiện' : 'Ẩn';

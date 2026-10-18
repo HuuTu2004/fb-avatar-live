@@ -25,7 +25,7 @@ Control panel có bốn khu vực hoạt động trực tiếp với backend:
 ## Yêu cầu
 
 - Linux, NVIDIA GPU, FFmpeg và `uv`.
-- Video avatar có mặt nhìn rõ. Một loop idle khoảng 1 giây, đầu/cuối khớp nhau sẽ chuyển cảnh mượt nhất.
+- Video avatar có mặt nhìn rõ. Đầu/cuối khớp nhau sẽ chuyển cảnh mượt nhất.
 - Facebook Page access token có quyền đọc comment của live video/post mà bạn quản lý. `FB_OBJECT_ID` là ID của live video hoặc post.
 - RTMPS ingest URL lấy từ Facebook Live Producer.
 - TikTok `@username` đang LIVE để đọc chat và RTMP URL + stream key lấy từ TikTok LIVE Center.
@@ -118,7 +118,7 @@ Pipeline vẫn gọi LLM, ZeroTTS, MuseTalk và stream thật. Preview nằm t�
 - `MUSETALK_BATCH_SIZE=20`: tăng đến khi GPU gần đầy. RTX 3090 24 GB thường đủ dư cho inference FP16.
 - `MUSETALK_XFORMERS=true`: dùng attention tối ưu; script bootstrap cài bản khớp PyTorch 2.0.1.
 - `MUSETALK_WARMUP=true`: chạy một giây audio im lặng lúc khởi động để lượt nói đầu không chịu chi phí warm-up CUDA.
-- `IDLE_CHUNK_SECONDS=1`: giới hạn thời gian chờ trước khi chen clip nói vào stream.
+- `IDLE_CHUNK_SECONDS=0.2`: giới hạn độ lệch khi video và audio cùng chuyển từ idle sang clip nói.
 
 Các đoạn trả lời được chia theo câu và chạy theo dây chuyền CPU/GPU, nên ZeroTTS có thể chuẩn bị đoạn kế tiếp trong lúc MuseTalk render đoạn hiện tại. Nếu lượng comment lớn hơn tốc độ phát lời, hàng đợi tạo backpressure thay vì mở thêm model hoặc làm tràn VRAM.
 

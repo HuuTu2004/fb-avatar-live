@@ -19,6 +19,14 @@ class StreamerOutputTests(unittest.TestCase):
         self.assertIn("aac", args)
         self.assertIn("flv", args)
 
+    def test_idle_writer_continues_across_loop_boundary(self):
+        streamer = self._streamer("rtsp://127.0.0.1:8554/avatar")
+        writes = []
+        streamer._write_all = lambda _, data: writes.append(data)
+        offset = streamer._write_looped(1, b"abcd", 3, 6)
+        self.assertEqual(b"".join(writes), b"dabcda")
+        self.assertEqual(offset, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

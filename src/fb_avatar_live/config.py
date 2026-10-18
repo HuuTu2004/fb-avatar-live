@@ -112,7 +112,7 @@ class Settings:
             output_fps=_integer("OUTPUT_FPS", 25),
             video_encoder=os.getenv("VIDEO_ENCODER", "libx264"),
             video_bitrate=os.getenv("VIDEO_BITRATE", "4500k"),
-            idle_chunk_seconds=_number("IDLE_CHUNK_SECONDS", 1),
+            idle_chunk_seconds=_number("IDLE_CHUNK_SECONDS", 0.2),
             data_dir=Path(os.getenv("DATA_DIR", "data")),
             queue_size=_integer("QUEUE_SIZE", 24),
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),

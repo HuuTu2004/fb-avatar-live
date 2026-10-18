@@ -64,9 +64,9 @@ class SegmentStreamer:
         subprocess.run(
             [
                 "ffmpeg", "-y", "-loglevel", "error", "-stream_loop", "-1", "-i", str(self.settings.avatar_video),
-                "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", str(self.settings.idle_chunk_seconds),
+                "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "1",
                 "-map", "0:v:0", "-map", "1:a:0", "-vf", self._video_filter().replace("format=bgr24", "format=yuv420p"),
-                *self._encoder_args(), "-g", str(self.settings.output_fps * 2), "-c:a", "aac", "-ar", "48000",
+                *self._encoder_args(), "-g", str(max(1, self.settings.output_fps // 5)), "-c:a", "aac", "-ar", "48000",
                 "-ac", "2", "-shortest", "-movflags", "+faststart", str(self.idle_mp4),
             ],
             check=True,
@@ -106,7 +106,7 @@ class SegmentStreamer:
             "-s", f"{self.settings.output_width}x{self.settings.output_height}",
             "-r", str(self.settings.output_fps), "-i", f"pipe:{video_read}",
             "-thread_queue_size", "512", "-re", "-f", "s16le", "-ar", "48000", "-ac", "2",
-            "-i", f"pipe:{audio_read}", *self._encoder_args(), "-g", str(self.settings.output_fps * 2),
+            "-i", f"pipe:{audio_read}", *self._encoder_args(), "-g", str(max(1, self.settings.output_fps // 5)),
             "-pix_fmt", "yuv420p", *self._output_args(),
         ]
         return subprocess.Popen(command, pass_fds=(video_read, audio_read))
@@ -127,6 +127,15 @@ class SegmentStreamer:
         while view and not self.stop_event.is_set():
             written = os.write(descriptor, view[: 64 * 1024])
             view = view[written:]
+
+    def _write_looped(self, descriptor: int, data: bytes, offset: int, size: int) -> int:
+        remaining = size
+        while remaining and not self.stop_event.is_set():
+            count = min(remaining, len(data) - offset)
+            self._write_all(descriptor, data[offset:offset + count])
+            offset = (offset + count) % len(data)
+            remaining -= count
+        return offset
 
     def _segment_done(self, path: Path) -> None:
         with self.pending_lock:
@@ -162,11 +171,13 @@ class SegmentStreamer:
             raise RuntimeError(f"Could not decode audio segment: {path}")
 
     def _feed_video(self, descriptor: int) -> None:
+        idle_offset = 0
+        idle_size = max(1, round(self.settings.output_fps * self.settings.idle_chunk_seconds)) * self.settings.output_width * self.settings.output_height * 3
         while not self.stop_event.is_set():
             try:
                 path = self.video_queue.get_nowait()
             except queue.Empty:
-                self._write_all(descriptor, self.idle_video)
+                idle_offset = self._write_looped(descriptor, self.idle_video, idle_offset, idle_size)
                 continue
             try:
                 self._decode_video(path, descriptor)
@@ -175,11 +186,13 @@ class SegmentStreamer:
                 self.video_queue.task_done()
 
     def _feed_audio(self, descriptor: int) -> None:
+        idle_offset = 0
+        idle_size = max(1, round(48000 * self.settings.idle_chunk_seconds)) * 2 * 2
         while not self.stop_event.is_set():
             try:
                 path = self.audio_queue.get_nowait()
             except queue.Empty:
-                self._write_all(descriptor, self.idle_audio)
+                idle_offset = self._write_looped(descriptor, self.idle_audio, idle_offset, idle_size)
                 continue
             try:
                 self._decode_audio(path, descriptor)
