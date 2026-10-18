@@ -89,9 +89,19 @@ class SegmentStreamer:
         if not self.settings.avatar_video.exists():
             raise FileNotFoundError(f"AVATAR_VIDEO does not exist: {self.settings.avatar_video}")
         self.stream_dir.mkdir(parents=True, exist_ok=True)
+        idle_frame_seconds = os.getenv("AVATAR_IDLE_FRAME_SECONDS", "").strip()
+        video_input = ["-stream_loop", "-1", "-i", str(self.settings.avatar_video)]
+        if idle_frame_seconds:
+            idle_frame = self.stream_dir / "idle-frame.png"
+            subprocess.run(
+                ["ffmpeg", "-y", "-loglevel", "error", "-ss", idle_frame_seconds,
+                 "-i", str(self.settings.avatar_video), "-frames:v", "1", str(idle_frame)],
+                check=True,
+            )
+            video_input = ["-loop", "1", "-framerate", str(self.settings.output_fps), "-i", str(idle_frame)]
         subprocess.run(
             [
-                "ffmpeg", "-y", "-loglevel", "error", "-stream_loop", "-1", "-i", str(self.settings.avatar_video),
+                "ffmpeg", "-y", "-loglevel", "error", *video_input,
                 "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "1",
                 "-map", "0:v:0", "-map", "1:a:0", "-vf", self._video_filter().replace("format=bgr24", "format=yuv420p"),
                 *self._encoder_args(), "-g", str(max(1, self.settings.output_fps // 5)), "-c:a", "aac", "-ar", "48000",

@@ -123,6 +123,7 @@ Pipeline vẫn gọi LLM, ZeroTTS, MuseTalk và stream thật. Preview nằm t�
 - `MUSETALK_WARMUP=true`: chạy một giây audio im lặng lúc khởi động để lượt nói đầu không chịu chi phí warm-up CUDA.
 - `MUSETALK_BBOX_SMOOTH_WINDOW=7`: lọc dao động của face detector để vùng miệng không co giãn hoặc rung giữa các frame.
 - `IDLE_CHUNK_SECONDS=0.2`: giới hạn độ lệch khi video và audio cùng chuyển từ idle sang clip nói.
+- `AVATAR_IDLE_FRAME_SECONDS=4`: tùy chọn lấy một frame miệng khép từ video gốc để hiển thị khi chờ câu nói; tránh cảnh miệng cử động trong lúc âm thanh im lặng. Bỏ trống để giữ cách phát video idle cũ.
 
 Các đoạn trả lời được chia theo câu và chạy theo dây chuyền CPU/GPU, nên ZeroTTS có thể chuẩn bị đoạn kế tiếp trong lúc MuseTalk render đoạn hiện tại. Nếu lượng comment lớn hơn tốc độ phát lời, hàng đợi tạo backpressure thay vì mở thêm model hoặc làm tràn VRAM.
 
