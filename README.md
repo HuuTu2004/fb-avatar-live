@@ -114,8 +114,8 @@ Pipeline vẫn gọi LLM, ZeroTTS, MuseTalk và stream thật. Preview nằm t�
 - `LLM_MAX_REPLY_CHARS=180-260`: câu ngắn giúp clip đầu xuất hiện sớm.
 - `ZEROTTS_THREADS=4`: đo trên instance này nhanh hơn 8 threads (`1,2× realtime` thay vì `0,8×`).
 - `ZEROTTS_WARMUP=true`: tổng hợp một câu rất ngắn khi khởi động để lượt bình luận đầu không chịu chi phí khởi tạo ONNX.
-- `SPEECH_CHUNK_CHARS=120`: gom câu dài để giảm điểm nối TTS/MuseTalk và tận dụng GPU tốt hơn.
-- `STREAM_PREBUFFER_SEGMENTS=2`: đợi sẵn hai đoạn trước khi phát và tự đệm lại nếu hàng chờ cạn, giúp âm thanh không khựng giữa câu. Tăng giá trị này để ưu tiên độ mượt, đổi lại lời bắt đầu chậm hơn.
+- `SPEECH_CHUNK_CHARS=260`: giữ trọn một lượt trả lời trong cùng ngữ cảnh audio của MuseTalk, tránh đoạn đuôi ngắn và điểm nối giữa câu.
+- `STREAM_PREBUFFER_SEGMENTS=2`: giữ hai lượt đầy đủ để che dao động thời gian của ZeroTTS/MuseTalk; đổi lại lần nói đầu tiên bắt đầu chậm hơn.
 - `MUSETALK_BATCH_SIZE=20`: tăng đến khi GPU gần đầy. RTX 3090 24 GB thường đủ dư cho inference FP16.
 - `MUSETALK_XFORMERS=true`: dùng attention tối ưu; script bootstrap cài bản khớp PyTorch 2.0.1.
 - `MUSETALK_WARMUP=true`: chạy một giây audio im lặng lúc khởi động để lượt nói đầu không chịu chi phí warm-up CUDA.

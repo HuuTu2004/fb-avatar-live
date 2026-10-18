@@ -104,7 +104,7 @@ class Settings:
             zerotts_voice=os.getenv("ZEROTTS_VOICE", "maichi"),
             zerotts_threads=_integer("ZEROTTS_THREADS", 4),
             zerotts_warmup=_boolean("ZEROTTS_WARMUP", True),
-            speech_chunk_chars=_integer("SPEECH_CHUNK_CHARS", 120),
+            speech_chunk_chars=_integer("SPEECH_CHUNK_CHARS", 260),
             musetalk_url=os.getenv("MUSETALK_URL", "http://127.0.0.1:18081").rstrip("/"),
             stream_url=os.getenv("STREAM_URL", ""),
             avatar_video=Path(os.getenv("AVATAR_VIDEO", "assets/avatar.mp4")),
