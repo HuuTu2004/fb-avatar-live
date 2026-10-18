@@ -28,12 +28,12 @@ WEB_ROOT = ROOT / "web"
 ASSET_DIR = Path("/workspace/assets")
 VOICE_HOME = ROOT / "data" / "voices"
 PREVIEW_DIR = ROOT / "data" / "previews"
-GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+OPENAI_BASE_URL = "https://api.openai.com/v1"
 BUILTIN_VOICES = ["maichi", "baotrang", "kimoanh", "hamy", "giahuy", "huuduc", "quangminh", "tiendat"]
 SERVICES = ["fb-avatar-mediamtx", "fb-avatar-musetalk", "fb-avatar-pipeline", "fb-avatar-forwarder"]
 
 
-class GroqPayload(BaseModel):
+class OpenAIPayload(BaseModel):
     api_key: str = ""
     model: str
 
@@ -175,8 +175,9 @@ async def _path_ready() -> bool:
 
 
 def _configured(values: dict[str, str]) -> dict[str, bool]:
+    uses_openai = values.get("LLM_BASE_URL", "").rstrip("/") == OPENAI_BASE_URL
     return {
-        "groq": bool(values.get("LLM_API_KEY") and values.get("LLM_MODEL")),
+        "openai": bool(uses_openai and values.get("LLM_API_KEY") and values.get("LLM_MODEL")),
         "voice": bool(values.get("ZEROTTS_VOICE")),
         "avatar": Path(values.get("AVATAR_VIDEO", "")).is_file(),
         "facebook": bool(values.get("FB_OBJECT_ID") and values.get("FB_PAGE_ACCESS_TOKEN")),
@@ -194,9 +195,10 @@ async def index() -> FileResponse:
 @app.get("/api/status")
 async def status() -> dict:
     values = env_file.read()
+    configured = _configured(values)
     return {
         "services": {name.removeprefix("fb-avatar-"): await asyncio.to_thread(_supervisor_status, name) for name in SERVICES},
-        "configured": _configured(values),
+        "configured": configured,
         "preview_ready": await _path_ready(),
         "voice": values.get("ZEROTTS_VOICE", "maichi"),
         "avatar": values.get("AVATAR_VIDEO", ""),
@@ -206,44 +208,50 @@ async def status() -> dict:
         "has_fb_token": bool(values.get("FB_PAGE_ACCESS_TOKEN")),
         "has_fb_stream_url": bool(values.get("FACEBOOK_STREAM_URL")),
         "has_tiktok_stream_url": bool(values.get("TIKTOK_STREAM_URL")),
-        "groq_model": values.get("LLM_MODEL", ""),
-        "has_groq_key": bool(values.get("LLM_API_KEY")),
+        "openai_model": values.get("LLM_MODEL", "") if configured["openai"] else "",
+        "has_openai_key": configured["openai"],
     }
 
 
-async def _groq_models(api_key: str) -> list[str]:
+def _saved_openai_key(values: dict[str, str]) -> str:
+    if values.get("LLM_BASE_URL", "").rstrip("/") != OPENAI_BASE_URL:
+        return ""
+    return values.get("LLM_API_KEY", "")
+
+
+async def _openai_models(api_key: str) -> list[str]:
     async with httpx.AsyncClient(timeout=15) as client:
         response = await client.get(
-            f"{GROQ_BASE_URL}/models",
+            f"{OPENAI_BASE_URL}/models",
             headers={"Authorization": f"Bearer {api_key}"},
         )
         if response.status_code >= 400:
-            raise HTTPException(status_code=400, detail="Groq từ chối API key")
+            raise HTTPException(status_code=400, detail="OpenAI từ chối API key")
         return sorted(str(item["id"]) for item in response.json().get("data", []) if item.get("id"))
 
 
-@app.post("/api/groq/test")
-async def test_groq(payload: GroqPayload) -> dict:
+@app.post("/api/openai/test")
+async def test_openai(payload: OpenAIPayload) -> dict:
     current = env_file.read()
-    api_key = payload.api_key.strip() or current.get("LLM_API_KEY", "")
+    api_key = payload.api_key.strip() or _saved_openai_key(current)
     if not api_key:
-        raise HTTPException(status_code=400, detail="Hãy nhập Groq API key")
-    models = await _groq_models(api_key)
+        raise HTTPException(status_code=400, detail="Hãy nhập OpenAI API key")
+    models = await _openai_models(api_key)
     if payload.model and payload.model not in models:
-        raise HTTPException(status_code=400, detail="Model không có trong tài khoản Groq này")
+        raise HTTPException(status_code=400, detail="Model không có trong tài khoản OpenAI này")
     return {"ok": True, "models": models}
 
 
-@app.post("/api/groq/save")
-async def save_groq(payload: GroqPayload) -> dict:
+@app.post("/api/openai/save")
+async def save_openai(payload: OpenAIPayload) -> dict:
     current = env_file.read()
-    api_key = payload.api_key.strip() or current.get("LLM_API_KEY", "")
+    api_key = payload.api_key.strip() or _saved_openai_key(current)
     if not api_key or not payload.model.strip():
         raise HTTPException(status_code=400, detail="Thiếu API key hoặc model")
-    models = await _groq_models(api_key)
+    models = await _openai_models(api_key)
     if payload.model not in models:
-        raise HTTPException(status_code=400, detail="Model không có trong tài khoản Groq này")
-    env_file.update({"LLM_BASE_URL": GROQ_BASE_URL, "LLM_API_KEY": api_key, "LLM_MODEL": payload.model})
+        raise HTTPException(status_code=400, detail="Model không có trong tài khoản OpenAI này")
+    env_file.update({"LLM_BASE_URL": OPENAI_BASE_URL, "LLM_API_KEY": api_key, "LLM_MODEL": payload.model})
     if _supervisor_status("fb-avatar-pipeline") == "RUNNING":
         await asyncio.to_thread(_start_or_restart, "fb-avatar-pipeline")
     return {"ok": True, "model": payload.model}
@@ -447,7 +455,7 @@ async def save_live(payload: LivePayload) -> dict:
 def _start_live() -> None:
     values = env_file.read()
     configured = _configured(values)
-    missing = [name for name in ("groq", "voice", "avatar") if not configured[name]]
+    missing = [name for name in ("openai", "voice", "avatar") if not configured[name]]
     source = values.get("COMMENT_SOURCE", "facebook")
     if source in {"facebook", "both"} and not configured["facebook"]:
         missing.append("facebook comments")

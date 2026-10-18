@@ -18,7 +18,7 @@ MuseTalk và ZeroTTS chạy ở hai môi trường Python riêng. MuseTalk giữ
 Control panel có bốn khu vực hoạt động trực tiếp với backend:
 
 1. Dashboard xem WebRTC, trạng thái service, start/stop và đưa câu thử vào hàng đợi.
-2. Groq API kiểm tra key, lấy model hiện có và lưu cấu hình.
+2. OpenAI API kiểm tra key, lấy model hiện có và lưu cấu hình.
 3. Clone voice cài voice pack ZeroTTS, chọn giọng và tổng hợp bản nghe thử.
 4. Avatar & Live tải video, chuẩn hóa 720p/25 FPS, chọn nguồn comment và lưu đích Facebook/TikTok.
 
@@ -29,7 +29,7 @@ Control panel có bốn khu vực hoạt động trực tiếp với backend:
 - Facebook Page access token có quyền đọc comment của live video/post mà bạn quản lý. `FB_OBJECT_ID` là ID của live video hoặc post.
 - RTMPS ingest URL lấy từ Facebook Live Producer.
 - TikTok `@username` đang LIVE để đọc chat và RTMP URL + stream key lấy từ TikTok LIVE Center.
-- Groq API key. Backend dùng endpoint OpenAI-compatible `https://api.groq.com/openai/v1`.
+- OpenAI API key. Backend dùng endpoint `https://api.openai.com/v1`.
 
 Ứng dụng chỉ đọc bình luận và nói trên livestream; nó không đăng câu trả lời trở lại Facebook hoặc TikTok.
 
@@ -55,13 +55,13 @@ ssh -p 21929 root@220.86.159.73 \
 # mở http://localhost:8088
 ```
 
-Giao diện sẽ hướng dẫn điền Groq, avatar và Facebook. Nếu muốn cấu hình bằng tay, các giá trị chính là:
+Giao diện sẽ hướng dẫn điền OpenAI, avatar và Facebook. Nếu muốn cấu hình bằng tay, các giá trị chính là:
 
 ```dotenv
 FB_OBJECT_ID=...
 FB_PAGE_ACCESS_TOKEN=...
 TIKTOK_UNIQUE_ID=ten_tai_khoan
-LLM_BASE_URL=https://api.groq.com/openai/v1
+LLM_BASE_URL=https://api.openai.com/v1
 LLM_API_KEY=...
 LLM_MODEL=...
 STREAM_URL=rtsp://127.0.0.1:8554/avatar
@@ -146,4 +146,4 @@ Vì pipeline render nhanh hơn nhịp phát, livestream vẫn chạy mượt và
 PYTHONPATH=src python -m unittest discover -s tests -v
 ```
 
-Tham khảo: [MuseTalk chính thức](https://github.com/TMElyralab/MuseTalk), [ZeroTTS chính thức](https://github.com/zeroweight-ai/ZeroTTS), [Groq API](https://console.groq.com/docs/api-reference), [MediaMTX WebRTC](https://mediamtx.org/docs/read/webrtc), và [Meta Graph API object comments](https://developers.facebook.com/docs/graph-api/reference/object/comments/).
+Tham khảo: [MuseTalk chính thức](https://github.com/TMElyralab/MuseTalk), [ZeroTTS chính thức](https://github.com/zeroweight-ai/ZeroTTS), [OpenAI API](https://platform.openai.com/docs/api-reference), [MediaMTX WebRTC](https://mediamtx.org/docs/read/webrtc), và [Meta Graph API object comments](https://developers.facebook.com/docs/graph-api/reference/object/comments/).

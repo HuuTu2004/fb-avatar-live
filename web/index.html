@@ -13,7 +13,7 @@
       <div class="brand"><span class="brand-mark">A</span><div><strong>Avatar Live</strong><small>Studio control</small></div></div>
       <nav>
         <button class="nav active" data-page="dashboard"><span>◫</span> Dashboard</button>
-        <button class="nav" data-page="groq"><span>⌁</span> Groq API</button>
+        <button class="nav" data-page="openai"><span>⌁</span> OpenAI API</button>
         <button class="nav" data-page="voice"><span>◉</span> Clone voice</button>
         <button class="nav" data-page="avatar"><span>◇</span> Avatar & Live</button>
       </nav>
@@ -30,7 +30,7 @@
         <div class="metrics">
           <article class="metric"><div class="metric-icon violet">◈</div><div><span>Pipeline</span><strong id="metric-pipeline">—</strong></div></article>
           <article class="metric"><div class="metric-icon cyan">◉</div><div><span>WebRTC</span><strong id="metric-preview">—</strong></div></article>
-          <article class="metric"><div class="metric-icon amber">⌁</div><div><span>Groq</span><strong id="metric-groq">—</strong></div></article>
+          <article class="metric"><div class="metric-icon amber">⌁</div><div><span>OpenAI</span><strong id="metric-openai">—</strong></div></article>
           <article class="metric"><div class="metric-icon green">◫</div><div><span>Kênh live</span><strong id="metric-channels">—</strong></div></article>
         </div>
 
@@ -56,16 +56,16 @@
         </div>
       </section>
 
-      <section class="page" id="groq">
-        <div class="intro"><div><p class="eyebrow">HẠNG MỤC 02</p><h2>Groq LLM</h2><p>Kiểm tra API key trực tiếp, tải danh sách model đang hoạt động và lưu cấu hình cho pipeline.</p></div><span class="hero-icon cyan">⌁</span></div>
+      <section class="page" id="openai">
+        <div class="intro"><div><p class="eyebrow">HẠNG MỤC 02</p><h2>OpenAI LLM</h2><p>Kiểm tra API key trực tiếp, tải danh sách model đang hoạt động và lưu cấu hình cho pipeline.</p></div><span class="hero-icon cyan">⌁</span></div>
         <article class="card form-card">
           <div class="form-grid">
-            <div class="field wide"><label>Groq API key</label><div class="secret-field"><input id="groq-key" type="password" autocomplete="off" placeholder="gsk_…"><button type="button" id="show-key">Hiện</button></div><small id="groq-key-hint">Key chỉ được lưu trong .env trên máy Vast.</small></div>
-            <div class="field"><label>Base URL</label><input value="https://api.groq.com/openai/v1" disabled></div>
-            <div class="field"><label>Model</label><select id="groq-model"><option value="">Kiểm tra key để tải model</option></select></div>
+            <div class="field wide"><label>OpenAI API key</label><div class="secret-field"><input id="openai-key" type="password" autocomplete="off" placeholder="sk-…"><button type="button" id="show-key">Hiện</button></div><small id="openai-key-hint">Key chỉ được lưu trong .env trên máy Vast.</small></div>
+            <div class="field"><label>Base URL</label><input value="https://api.openai.com/v1" disabled></div>
+            <div class="field"><label>Model</label><select id="openai-model"><option value="">Kiểm tra key để tải model</option></select></div>
           </div>
-          <div class="form-actions"><button class="secondary" id="test-groq">Kiểm tra kết nối</button><button class="primary" id="save-groq">Lưu Groq</button></div>
-          <div class="result" id="groq-result">Chưa kiểm tra kết nối.</div>
+          <div class="form-actions"><button class="secondary" id="test-openai">Kiểm tra kết nối</button><button class="primary" id="save-openai">Lưu OpenAI</button></div>
+          <div class="result" id="openai-result">Chưa kiểm tra kết nối.</div>
         </article>
       </section>
 

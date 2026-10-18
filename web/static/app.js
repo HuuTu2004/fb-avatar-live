@@ -35,14 +35,14 @@ function updateStatus(data) {
   const running = data.services.pipeline === 'RUNNING';
   $('#metric-pipeline').textContent = serviceLabel(data.services.pipeline);
   $('#metric-preview').textContent = data.preview_ready ? 'Có tín hiệu' : 'Chờ tín hiệu';
-  $('#metric-groq').textContent = data.configured.groq ? data.groq_model || 'Đã cấu hình' : 'Chưa cấu hình';
+  $('#metric-openai').textContent = data.configured.openai ? data.openai_model || 'Đã cấu hình' : 'Chưa cấu hình';
   const channelCount = Number(data.configured.facebook_stream) + Number(data.configured.tiktok_stream);
   $('#metric-channels').textContent = channelCount ? `${channelCount} kênh sẵn sàng` : 'Thiếu cấu hình';
   $('#global-dot').classList.toggle('ok', running);
   $('#global-text').textContent = running ? 'Pipeline đang chạy' : 'Pipeline đang dừng';
 
   const checks = [
-    ['Groq API', data.configured.groq], ['Voice', data.configured.voice], ['Avatar', data.configured.avatar]
+    ['OpenAI API', data.configured.openai], ['Voice', data.configured.voice], ['Avatar', data.configured.avatar]
   ];
   if (['facebook', 'both'].includes(data.comment_source)) checks.push(['Facebook comments', data.configured.facebook]);
   if (['tiktok', 'both'].includes(data.comment_source)) checks.push(['TikTok comments', data.configured.tiktok]);
@@ -52,10 +52,10 @@ function updateStatus(data) {
   $('#fb-object').value = data.fb_object_id || '';
   $('#comment-source').value = data.comment_source || 'facebook';
   $('#tiktok-user').value = data.tiktok_unique_id ? `@${data.tiktok_unique_id}` : '';
-  $('#groq-key-hint').textContent = data.has_groq_key ? 'Đã có key lưu trên máy. Giữ trống để tiếp tục dùng.' : 'Key chỉ được lưu trong .env trên máy Vast.';
-  if (data.groq_model && ![...$('#groq-model').options].some(o => o.value === data.groq_model)) {
-    $('#groq-model').add(new Option(data.groq_model, data.groq_model));
-    $('#groq-model').value = data.groq_model;
+  $('#openai-key-hint').textContent = data.has_openai_key ? 'Đã có key lưu trên máy. Giữ trống để tiếp tục dùng.' : 'Key chỉ được lưu trong .env trên máy Vast.';
+  if (data.openai_model && ![...$('#openai-model').options].some(o => o.value === data.openai_model)) {
+    $('#openai-model').add(new Option(data.openai_model, data.openai_model));
+    $('#openai-model').value = data.openai_model;
   }
   if (data.configured.avatar) loadAvatar();
   if (data.preview_ready) loadPreview();
@@ -109,33 +109,36 @@ $('#toggle-audio').onclick = async () => {
   catch (_) { toast('Chrome đang chặn âm thanh; hãy bấm biểu tượng loa trên video', true); }
 };
 $('#show-key').onclick = () => {
-  const input = $('#groq-key'); input.type = input.type === 'password' ? 'text' : 'password';
+  const input = $('#openai-key'); input.type = input.type === 'password' ? 'text' : 'password';
   $('#show-key').textContent = input.type === 'password' ? 'Hiện' : 'Ẩn';
 };
 
-async function groqAction(save) {
-  const button = save ? $('#save-groq') : $('#test-groq'); busy(button, true);
+async function openaiAction(save) {
+  const button = save ? $('#save-openai') : $('#test-openai'); busy(button, true);
   try {
-    const data = await api(save ? '/api/groq/save' : '/api/groq/test', {
+    const data = await api(save ? '/api/openai/save' : '/api/openai/test', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({api_key: $('#groq-key').value, model: $('#groq-model').value})
+      body: JSON.stringify({api_key: $('#openai-key').value, model: $('#openai-model').value})
     });
     if (data.models) {
-      const current = $('#groq-model').value || state?.groq_model;
-      $('#groq-model').innerHTML = '<option value="">Chọn model</option>';
-      data.models.forEach(model => $('#groq-model').add(new Option(model, model)));
-      if (current && data.models.includes(current)) $('#groq-model').value = current;
-      else if (data.models.includes('llama-3.1-8b-instant')) $('#groq-model').value = 'llama-3.1-8b-instant';
+      const current = $('#openai-model').value || state?.openai_model;
+      $('#openai-model').innerHTML = '<option value="">Chọn model</option>';
+      data.models.forEach(model => $('#openai-model').add(new Option(model, model)));
+      if (current && data.models.includes(current)) $('#openai-model').value = current;
+      else {
+        const preferred = ['gpt-4.1-mini', 'gpt-4o-mini'].find(model => data.models.includes(model));
+        $('#openai-model').value = preferred || data.models.find(model => model.startsWith('gpt-')) || '';
+      }
     }
-    $('#groq-result').className = 'result ok';
-    $('#groq-result').textContent = save ? `Đã lưu model ${data.model}.` : `Kết nối thành công · ${data.models.length} model khả dụng.`;
-    toast(save ? 'Đã lưu cấu hình Groq' : 'Groq API hoạt động');
+    $('#openai-result').className = 'result ok';
+    $('#openai-result').textContent = save ? `Đã lưu model ${data.model}.` : `Kết nối thành công · ${data.models.length} model khả dụng.`;
+    toast(save ? 'Đã lưu cấu hình OpenAI' : 'OpenAI API hoạt động');
     refreshStatus();
-  } catch (error) { $('#groq-result').className = 'result'; $('#groq-result').textContent = error.message; toast(error.message, true); }
+  } catch (error) { $('#openai-result').className = 'result'; $('#openai-result').textContent = error.message; toast(error.message, true); }
   finally { busy(button, false); }
 }
-$('#test-groq').onclick = () => groqAction(false);
-$('#save-groq').onclick = () => groqAction(true);
+$('#test-openai').onclick = () => openaiAction(false);
+$('#save-openai').onclick = () => openaiAction(true);
 
 $('#voice-file').onchange = async () => {
   const file = $('#voice-file').files[0]; if (!file) return;
