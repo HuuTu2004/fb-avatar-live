@@ -1,0 +1,31 @@
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from fb_avatar_live.core import Comment, CommentStore, split_utterances
+
+
+class CoreTests(unittest.TestCase):
+    def test_split_utterances_preserves_words_and_limit(self) -> None:
+        text = "Xin chào mọi người. " + "Một câu khá dài " * 12 + "Cảm ơn nhé!"
+        chunks = split_utterances(text, max_chars=60)
+        self.assertGreater(len(chunks), 2)
+        self.assertTrue(all(len(chunk) <= 60 for chunk in chunks))
+        self.assertEqual(" ".join(chunks).split(), text.split())
+
+    def test_comment_store_deduplicates_and_marks_batch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = CommentStore(Path(directory) / "state.sqlite3")
+            comments = [Comment("1", "An", "Chào"), Comment("2", "Bình", "Hello")]
+            self.assertEqual(store.add(comments), 2)
+            self.assertEqual(store.add(comments), 0)
+            self.assertEqual([item.id for item in store.pending(10)], ["1", "2"])
+            store.mark_processed(["1"])
+            self.assertEqual([item.id for item in store.pending(10)], ["2"])
+            store.close()
+
+
+if __name__ == "__main__":
+    unittest.main()
