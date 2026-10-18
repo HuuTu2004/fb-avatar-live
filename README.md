@@ -6,10 +6,19 @@ Pipeline chạy liên tục trên một máy Vast.ai:
 Facebook comments -> SQLite dedupe/batch -> hosted LLM
                   -> short speech chunks -> ZeroTTS (CPU)
                   -> persistent MuseTalk 1.5 (GPU)
-                  -> one continuous FFmpeg RTMPS stream
+                  -> FFmpeg H.264/Opus -> MediaMTX
+                     ├─ WebRTC/WHEP preview in control panel
+                     └─ H.264/AAC forwarder -> Facebook RTMPS
 ```
 
-MuseTalk và ZeroTTS chạy ở hai môi trường Python riêng. MuseTalk giữ model trong VRAM và nhận từng đoạn audio qua HTTP nội bộ; ZeroTTS, LLM và bộ điều phối chạy trong tiến trình còn lại. FFmpeg luôn phát một idle clip ngắn khi chưa có câu trả lời nên phiên RTMPS không bị đóng.
+MuseTalk và ZeroTTS chạy ở hai môi trường Python riêng. MuseTalk giữ model trong VRAM và nhận từng đoạn audio qua HTTP nội bộ; ZeroTTS, LLM và bộ điều phối chạy trong tiến trình còn lại. FFmpeg luôn phát một idle clip ngắn khi chưa có câu trả lời. MediaMTX cấp preview WebRTC độ trễ thấp và forwarder đổi Opus sang AAC để gửi cùng video H.264 lên Facebook.
+
+Control panel có bốn khu vực hoạt động trực tiếp với backend:
+
+1. Dashboard xem WebRTC, trạng thái service, start/stop và đưa câu thử vào hàng đợi.
+2. Groq API kiểm tra key, lấy model hiện có và lưu cấu hình.
+3. Clone voice cài voice pack ZeroTTS, chọn giọng và tổng hợp bản nghe thử.
+4. Avatar & Live tải video, chuẩn hóa 720p/25 FPS, lưu Facebook token và RTMPS URL.
 
 ## Yêu cầu
 
@@ -17,7 +26,7 @@ MuseTalk và ZeroTTS chạy ở hai môi trường Python riêng. MuseTalk giữ
 - Video avatar có mặt nhìn rõ. Một loop idle khoảng 1 giây, đầu/cuối khớp nhau sẽ chuyển cảnh mượt nhất.
 - Facebook Page access token có quyền đọc comment của live video/post mà bạn quản lý. `FB_OBJECT_ID` là ID của live video hoặc post.
 - RTMPS ingest URL lấy từ Facebook Live Producer.
-- Một endpoint LLM tương thích OpenAI `/chat/completions`.
+- Groq API key. Backend dùng endpoint OpenAI-compatible `https://api.groq.com/openai/v1`.
 
 Ứng dụng chỉ đọc bình luận và nói trên livestream; nó không đăng câu trả lời trở lại Facebook.
 
@@ -29,36 +38,43 @@ Repo nên nằm tại `/workspace/fb-avatar-live`:
 cd /workspace/fb-avatar-live
 chmod +x scripts/*.sh
 ./scripts/bootstrap_vast.sh
-cp .env.example .env
+./scripts/install_supervisor.sh
 ```
 
-Chép avatar vào `/workspace/assets/avatar.mp4`, rồi điền các giá trị bắt buộc trong `.env`:
+`install_supervisor.sh` tạo `.env` nếu cần, cài năm service và đăng ký **Avatar Live Studio** vào Vast Instance Portal. Mở app đó từ portal, hoặc dùng SSH tunnel riêng:
+
+```bash
+ssh -p 21929 root@220.86.159.73 -L 8088:127.0.0.1:18080
+# mở http://localhost:8088
+```
+
+Giao diện sẽ hướng dẫn điền Groq, avatar và Facebook. Nếu muốn cấu hình bằng tay, các giá trị chính là:
 
 ```dotenv
 FB_OBJECT_ID=...
 FB_PAGE_ACCESS_TOKEN=...
-LLM_BASE_URL=https://provider.example/v1
+LLM_BASE_URL=https://api.groq.com/openai/v1
 LLM_API_KEY=...
 LLM_MODEL=...
-STREAM_URL=rtmps://...private-stream-key...
+STREAM_URL=rtsp://127.0.0.1:8554/avatar
+FACEBOOK_STREAM_URL=rtmps://...private-stream-key...
 ```
 
 Không commit `.env`; token Facebook, API key LLM và stream key đều là bí mật.
 
-Chạy thủ công để kiểm tra log:
+Các service được Supervisor quản lý:
 
 ```bash
-./scripts/run_musetalk.sh
-# terminal khác
-./scripts/run_pipeline.sh
+supervisorctl status \
+  fb-avatar-control fb-avatar-mediamtx fb-avatar-musetalk \
+  fb-avatar-pipeline fb-avatar-forwarder
 ```
 
-Khi chạy ổn, cài hai tiến trình vào supervisor:
+Control panel được bảo vệ bởi lớp token của Vast/Caddy. MediaMTX chỉ bind HTTP/RTSP vào localhost; WebRTC dùng STUN để thiết lập media path. Mạng chặn UDP hoặc symmetric NAT nên cấu hình thêm TURN trong `config/mediamtx.yml`.
 
-```bash
-./scripts/install_supervisor.sh
-supervisorctl status fb-avatar-musetalk fb-avatar-pipeline
-```
+## Clone voice
+
+Bản ZeroTTS công khai có thể **nạp và chạy** giọng tùy chỉnh nhưng không phát hành voice encoder, vì vậy máy chủ không thể tự biến một WAV thành latent. Tạo giọng từ audio mẫu tại [ZeroWeight Audio](https://platform.zeroweight.ai/audio), tải nguyên voice pack ZIP, rồi thả ZIP vào mục **Clone voice**. Backend kiểm tra `voice.npz`, cài pack vào `data/voices`, cập nhật `.env`, restart pipeline và cho nghe thử ngay.
 
 ## Kiểm tra không cần Facebook
 
@@ -76,7 +92,7 @@ mkdir -p data
 echo '{"id":"1","author":"An","message":"Bạn giới thiệu sản phẩm này giúp mình nhé"}' >> data/demo_comments.jsonl
 ```
 
-Pipeline vẫn gọi LLM, ZeroTTS, MuseTalk và stream thật. Muốn test vào file, đặt `STREAM_URL=/workspace/fb-avatar-live/data/test.flv`.
+Pipeline vẫn gọi LLM, ZeroTTS, MuseTalk và stream thật. Preview nằm tại dashboard; đường WHEP nội bộ là `/preview/avatar/whep`.
 
 ## Điều chỉnh độ trễ
 
@@ -101,6 +117,8 @@ Instance Vast.ai dùng RTX 3090 24 GB, 12 vCPU và 62 GB RAM. Với avatar mẫu
 - ZeroTTS với 4 CPU threads đạt khoảng 1,2× realtime trong phép đo lặp; 8 threads chậm hơn trên máy này.
 - Kiểm thử toàn tuyến đã tạo một FLV dài 31,54 giây với 789 khung hình, H.264 25 FPS và AAC 48 kHz stereo. FFmpeg giải mã lại không có lỗi; hai đoạn tiếng nói được giữ nguyên giữa các đoạn idle.
 - Với batch 2 giây, LLM giả lập chạy ngay tại máy và đoạn nói tối đa 45 ký tự, âm thanh đầu tiên bắt đầu khoảng 14 giây sau khi nhận comment. Endpoint LLM thật sẽ cộng thêm độ trễ mạng/model. Đặt 30–40 ký tự có thể giảm thêm vài giây nhưng giọng dễ bị chia vụn hơn.
+- Kiểm thử WebRTC/MediaMTX nhận đúng H.264 1280×720/25 FPS và Opus 48 kHz stereo. Bản ghi RTSP 25,02 giây có 578 video packet và 1.250 audio packet, giải mã lại không lỗi. Forwarder tạo FLV 20 giây với H.264 + AAC cho Facebook.
+- Sau khi cả ZeroTTS và MuseTalk đã warm, lượt tích hợp gần nhất đưa clip đầu vào stream khoảng 8,4 giây sau khi nhận comment.
 
 Vì pipeline render nhanh hơn nhịp phát, livestream vẫn chạy mượt và liên tục khi tải trung bình không vượt quá một luồng lời nói. Khi comment đến nhanh hơn khả năng đọc, hệ thống gộp theo batch và giữ hàng đợi thay vì cố đọc mọi comment.
 
@@ -108,6 +126,7 @@ Vì pipeline render nhanh hơn nhịp phát, livestream vẫn chạy mượt và
 
 - Polling chỉ đọc tối đa `FB_FETCH_LIMIT` comment mới nhất mỗi nhịp. Livestream có hơn 100 comment trong khoảng poll nên chuyển sang Page Webhooks để không bỏ sót.
 - Chuyển từ idle clip sang clip nói phụ thuộc vào loop avatar. Dùng một loop ngắn, ổn định và cùng khung hình đầu/cuối để tránh giật hình.
+- WebRTC dùng STUN mặc định. Mạng doanh nghiệp chặn UDP hoặc NAT khó nên cấp một TURN server để preview hoạt động ổn định từ mọi nơi.
 - `/workspace` của instance hiện tại không gắn volume. Stop/start giữ dữ liệu, nhưng recycle hoặc destroy sẽ xóa repo, model và cache; đồng bộ repo/assets ra nơi khác trước khi làm hai thao tác đó.
 
 ## Kiểm tra mã
@@ -116,4 +135,4 @@ Vì pipeline render nhanh hơn nhịp phát, livestream vẫn chạy mượt và
 PYTHONPATH=src python -m unittest discover -s tests -v
 ```
 
-Tham khảo: [MuseTalk chính thức](https://github.com/TMElyralab/MuseTalk), [ZeroTTS chính thức](https://github.com/zeroweight-ai/ZeroTTS), và [Meta Graph API object comments](https://developers.facebook.com/docs/graph-api/reference/object/comments/).
+Tham khảo: [MuseTalk chính thức](https://github.com/TMElyralab/MuseTalk), [ZeroTTS chính thức](https://github.com/zeroweight-ai/ZeroTTS), [Groq API](https://console.groq.com/docs/api-reference), [MediaMTX WebRTC](https://mediamtx.org/docs/read/webrtc), và [Meta Graph API object comments](https://developers.facebook.com/docs/graph-api/reference/object/comments/).

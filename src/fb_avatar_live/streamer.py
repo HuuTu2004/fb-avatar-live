@@ -107,10 +107,20 @@ class SegmentStreamer:
             "-r", str(self.settings.output_fps), "-i", f"pipe:{video_read}",
             "-thread_queue_size", "512", "-re", "-f", "s16le", "-ar", "48000", "-ac", "2",
             "-i", f"pipe:{audio_read}", *self._encoder_args(), "-g", str(self.settings.output_fps * 2),
-            "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000", "-ac", "2",
-            "-flvflags", "no_duration_filesize", "-f", "flv", self.settings.stream_url,
+            "-pix_fmt", "yuv420p", *self._output_args(),
         ]
         return subprocess.Popen(command, pass_fds=(video_read, audio_read))
+
+    def _output_args(self) -> list[str]:
+        if self.settings.stream_url.startswith("rtsp://"):
+            return [
+                "-c:a", "libopus", "-b:a", "128k", "-ar", "48000", "-ac", "2",
+                "-rtsp_transport", "tcp", "-f", "rtsp", self.settings.stream_url,
+            ]
+        return [
+            "-c:a", "aac", "-ar", "48000", "-ac", "2", "-flvflags",
+            "no_duration_filesize", "-f", "flv", self.settings.stream_url,
+        ]
 
     def _write_all(self, descriptor: int, data: bytes) -> None:
         view = memoryview(data)

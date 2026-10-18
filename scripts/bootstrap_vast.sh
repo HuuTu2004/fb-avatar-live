@@ -5,6 +5,7 @@ ROOT="${ROOT:-/workspace/fb-avatar-live}"
 MUSETALK_ROOT="${MUSETALK_ROOT:-/workspace/MuseTalk}"
 ZEROTTS_ROOT="${ZEROTTS_ROOT:-/workspace/ZeroTTS}"
 MODEL_ROOT="${MODEL_ROOT:-/workspace/models/zerotts}"
+MEDIAMTX_VERSION="${MEDIAMTX_VERSION:-1.21.1}"
 
 mkdir -p /workspace/venvs /workspace/models
 
@@ -18,6 +19,16 @@ fi
 uv venv --python 3.11 "$ROOT/.venv"
 uv pip install --python "$ROOT/.venv/bin/python" -e "$ROOT"
 "$ROOT/.venv/bin/hf" download zeroweight-ai/ZeroTTS --local-dir "$MODEL_ROOT"
+
+case "$(uname -m)" in
+  x86_64) mediamtx_arch=amd64 ;;
+  aarch64|arm64) mediamtx_arch=arm64v8 ;;
+  *) echo "Unsupported MediaMTX architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+mediamtx_archive="/tmp/mediamtx-${MEDIAMTX_VERSION}.tar.gz"
+curl -fL "https://github.com/bluenviron/mediamtx/releases/download/v${MEDIAMTX_VERSION}/mediamtx_v${MEDIAMTX_VERSION}_linux_${mediamtx_arch}.tar.gz" -o "$mediamtx_archive"
+tar -xzf "$mediamtx_archive" -C /tmp mediamtx
+install -m 755 /tmp/mediamtx /usr/local/bin/mediamtx
 
 uv venv --python 3.10 /workspace/venvs/musetalk
 uv pip install --python /workspace/venvs/musetalk/bin/python \

@@ -19,6 +19,12 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from transformers import WhisperModel
 
+ROOT = Path(os.getenv("ROOT", "/workspace/fb-avatar-live")).resolve()
+sys.path.insert(0, str(ROOT / "src"))
+from fb_avatar_live.config import load_env
+
+load_env(ROOT / ".env")
+
 
 class RenderRequest(BaseModel):
     audio_path: str

@@ -2,56 +2,77 @@
 set -euo pipefail
 
 ROOT="${ROOT:-/workspace/fb-avatar-live}"
-[[ -f "$ROOT/.env" ]] || { echo "Missing $ROOT/.env" >&2; exit 1; }
+[[ -f "$ROOT/.env" ]] || cp "$ROOT/.env.example" "$ROOT/.env"
+chmod 600 "$ROOT/.env"
 
-cat >/opt/supervisor-scripts/fb-avatar-musetalk.sh <<EOF
+make_wrapper() {
+  local name="$1" script="$2"
+  cat >"/opt/supervisor-scripts/${name}.sh" <<EOF
 #!/usr/bin/env bash
 utils=/opt/supervisor-scripts/utils
 . "\${utils}/logging.sh"
 . "\${utils}/environment.sh"
-exec "$ROOT/scripts/run_musetalk.sh"
+exec "$ROOT/scripts/$script"
 EOF
+  chmod +x "/opt/supervisor-scripts/${name}.sh"
+}
 
-cat >/opt/supervisor-scripts/fb-avatar-pipeline.sh <<EOF
+make_wrapper fb-avatar-mediamtx run_mediamtx.sh
+make_wrapper fb-avatar-musetalk run_musetalk.sh
+make_wrapper fb-avatar-pipeline run_pipeline.sh
+make_wrapper fb-avatar-forwarder run_forwarder.sh
+
+cat >/opt/supervisor-scripts/fb-avatar-control.sh <<EOF
 #!/usr/bin/env bash
 utils=/opt/supervisor-scripts/utils
 . "\${utils}/logging.sh"
 . "\${utils}/environment.sh"
-exec "$ROOT/scripts/run_pipeline.sh"
+. "\${utils}/exit_portal.sh" "Avatar Live Studio"
+exec "$ROOT/scripts/run_control_panel.sh"
 EOF
+chmod +x /opt/supervisor-scripts/fb-avatar-control.sh "$ROOT"/scripts/*.sh
 
-chmod +x \
-  /opt/supervisor-scripts/fb-avatar-musetalk.sh \
-  /opt/supervisor-scripts/fb-avatar-pipeline.sh \
-  "$ROOT/scripts/run_musetalk.sh" \
-  "$ROOT/scripts/run_pipeline.sh"
-
-cat >/etc/supervisor/conf.d/fb-avatar-musetalk.conf <<'EOF'
-[program:fb-avatar-musetalk]
+write_service() {
+  local name="$1" priority="$2" startsecs="$3"
+  cat >"/etc/supervisor/conf.d/${name}.conf" <<EOF
+[program:${name}]
 environment=PROC_NAME="%(program_name)s"
-command=/opt/supervisor-scripts/fb-avatar-musetalk.sh
+command=/opt/supervisor-scripts/${name}.sh
 autostart=true
-autorestart=true
-startsecs=10
+autorestart=unexpected
+startsecs=${startsecs}
 stdout_logfile=/dev/stdout
 redirect_stderr=true
 stdout_logfile_maxbytes=0
-priority=20
+stopasgroup=true
+killasgroup=true
+priority=${priority}
 EOF
+}
 
-cat >/etc/supervisor/conf.d/fb-avatar-pipeline.conf <<'EOF'
-[program:fb-avatar-pipeline]
-environment=PROC_NAME="%(program_name)s"
-command=/opt/supervisor-scripts/fb-avatar-pipeline.sh
-autostart=true
-autorestart=true
-startsecs=10
-stdout_logfile=/dev/stdout
-redirect_stderr=true
-stdout_logfile_maxbytes=0
-priority=30
-EOF
+write_service fb-avatar-mediamtx 10 3
+write_service fb-avatar-control 15 3
+write_service fb-avatar-musetalk 20 10
+write_service fb-avatar-pipeline 30 10
+write_service fb-avatar-forwarder 40 3
+
+/venv/main/bin/python - <<'PY'
+import yaml
+path = "/etc/portal.yaml"
+with open(path, encoding="utf-8") as stream:
+    data = yaml.safe_load(stream) or {"applications": {}}
+data.setdefault("applications", {})["Avatar Live Studio"] = {
+    "hostname": "localhost",
+    "external_port": 10200,
+    "internal_port": 18080,
+    "open_path": "/",
+    "name": "Avatar Live Studio",
+}
+with open(path, "w", encoding="utf-8") as stream:
+    yaml.safe_dump(data, stream, sort_keys=False)
+PY
 
 supervisorctl reread
 supervisorctl update
-supervisorctl status fb-avatar-musetalk fb-avatar-pipeline
+supervisorctl restart caddy
+supervisorctl status fb-avatar-mediamtx fb-avatar-control fb-avatar-musetalk fb-avatar-pipeline fb-avatar-forwarder || true

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Avatar Live Studio</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">A</span><div><strong>Avatar Live</strong><small>Studio control</small></div></div>
+      <nav>
+        <button class="nav active" data-page="dashboard"><span>◫</span> Dashboard</button>
+        <button class="nav" data-page="groq"><span>⌁</span> Groq API</button>
+        <button class="nav" data-page="voice"><span>◉</span> Clone voice</button>
+        <button class="nav" data-page="avatar"><span>◇</span> Avatar & Live</button>
+      </nav>
+      <div class="side-status"><i id="global-dot"></i><span id="global-text">Đang kiểm tra…</span></div>
+    </aside>
+
+    <main>
+      <header>
+        <div><p class="eyebrow">FACEBOOK LIVE AUTOMATION</p><h1 id="page-title">Dashboard</h1></div>
+        <div class="header-actions"><span class="clock" id="clock"></span><button class="icon-btn" id="refresh" title="Làm mới">↻</button></div>
+      </header>
+
+      <section class="page active" id="dashboard">
+        <div class="metrics">
+          <article class="metric"><div class="metric-icon violet">◈</div><div><span>Pipeline</span><strong id="metric-pipeline">—</strong></div></article>
+          <article class="metric"><div class="metric-icon cyan">◉</div><div><span>WebRTC</span><strong id="metric-preview">—</strong></div></article>
+          <article class="metric"><div class="metric-icon amber">⌁</div><div><span>Groq</span><strong id="metric-groq">—</strong></div></article>
+          <article class="metric"><div class="metric-icon green">◫</div><div><span>Facebook</span><strong id="metric-facebook">—</strong></div></article>
+        </div>
+
+        <div class="grid dashboard-grid">
+          <article class="card preview-card">
+            <div class="card-head"><div><p class="label">LOW LATENCY PREVIEW</p><h2>Live WebRTC</h2></div><span class="live-badge"><i></i> LIVE</span></div>
+            <div class="stage">
+              <iframe id="live-frame" title="WebRTC live preview" allow="autoplay; fullscreen; picture-in-picture"></iframe>
+              <div class="stage-empty" id="stage-empty"><span>◈</span><strong>Chưa có tín hiệu</strong><small>Khởi động live để mở preview WebRTC</small></div>
+            </div>
+            <div class="stream-meta"><span><i class="dot green-dot"></i> H.264 / Opus</span><span>1280 × 720</span><span>25 FPS</span><button class="link-btn" id="reload-preview">Tải lại preview</button></div>
+          </article>
+
+          <article class="card control-card">
+            <div class="card-head"><div><p class="label">CONTROL</p><h2>Phiên phát</h2></div></div>
+            <div class="checklist" id="checklist"></div>
+            <div class="button-stack"><button class="primary" id="start-live">Bắt đầu live</button><button class="danger" id="stop-live">Dừng phiên phát</button></div>
+            <div class="divider"></div>
+            <label>Câu kiểm tra</label>
+            <textarea id="test-message" rows="3">Xin chào, hãy giới thiệu ngắn về buổi livestream này.</textarea>
+            <button class="secondary" id="test-live">Đưa câu thử vào luồng</button>
+          </article>
+        </div>
+      </section>
+
+      <section class="page" id="groq">
+        <div class="intro"><div><p class="eyebrow">HẠNG MỤC 02</p><h2>Groq LLM</h2><p>Kiểm tra API key trực tiếp, tải danh sách model đang hoạt động và lưu cấu hình cho pipeline.</p></div><span class="hero-icon cyan">⌁</span></div>
+        <article class="card form-card">
+          <div class="form-grid">
+            <div class="field wide"><label>Groq API key</label><div class="secret-field"><input id="groq-key" type="password" autocomplete="off" placeholder="gsk_…"><button type="button" id="show-key">Hiện</button></div><small id="groq-key-hint">Key chỉ được lưu trong .env trên máy Vast.</small></div>
+            <div class="field"><label>Base URL</label><input value="https://api.groq.com/openai/v1" disabled></div>
+            <div class="field"><label>Model</label><select id="groq-model"><option value="">Kiểm tra key để tải model</option></select></div>
+          </div>
+          <div class="form-actions"><button class="secondary" id="test-groq">Kiểm tra kết nối</button><button class="primary" id="save-groq">Lưu Groq</button></div>
+          <div class="result" id="groq-result">Chưa kiểm tra kết nối.</div>
+        </article>
+      </section>
+
+      <section class="page" id="voice">
+        <div class="intro"><div><p class="eyebrow">HẠNG MỤC 03</p><h2>Clone voice</h2><p>Cài voice pack ZeroTTS, chọn giọng đang dùng và nghe thử ngay trên trình duyệt.</p></div><span class="hero-icon violet">◉</span></div>
+        <div class="grid voice-grid">
+          <article class="card">
+            <div class="step"><b>1</b><div><strong>Tạo voice pack</strong><p>ZeroTTS công khai không kèm encoder. Tạo giọng từ audio mẫu trên ZeroWeight rồi tải ZIP về.</p></div></div>
+            <a class="external" href="https://platform.zeroweight.ai/audio" target="_blank" rel="noreferrer">Mở ZeroWeight Audio ↗</a>
+            <div class="step"><b>2</b><div><strong>Cài voice pack</strong><p>Thả nguyên file ZIP đã tải về. Hệ thống sẽ kiểm tra latent trước khi cài.</p></div></div>
+            <label class="dropzone" id="voice-drop"><input id="voice-file" type="file" accept=".zip"><span class="upload-icon">⇧</span><strong>Chọn voice pack .zip</strong><small>Tối đa 64 MB</small></label>
+          </article>
+          <article class="card">
+            <label>Giọng đang dùng</label><select id="voice-select"></select>
+            <div class="voice-preview"><span class="avatar-wave">◉</span><div><strong id="voice-name">—</strong><small>ZeroTTS · Vietnamese</small></div></div>
+            <label>Văn bản nghe thử</label><textarea id="voice-text" rows="4">Xin chào, đây là giọng nói thử của bạn.</textarea>
+            <div class="form-actions"><button class="secondary" id="select-voice">Dùng giọng này</button><button class="primary" id="preview-voice">Tạo bản nghe thử</button></div>
+            <audio id="voice-audio" controls></audio>
+          </article>
+        </div>
+      </section>
+
+      <section class="page" id="avatar">
+        <div class="intro"><div><p class="eyebrow">HẠNG MỤC 04</p><h2>Avatar & Facebook Live</h2><p>Chuẩn hóa video avatar, cấu hình nguồn comment và đích RTMPS của Facebook.</p></div><span class="hero-icon amber">◇</span></div>
+        <div class="grid avatar-grid">
+          <article class="card">
+            <div class="card-head"><h2>Avatar video</h2><span class="tag">25 FPS</span></div>
+            <div class="avatar-preview"><video id="avatar-video" muted loop controls playsinline></video><div id="avatar-empty">Chưa tải avatar</div></div>
+            <label class="dropzone compact"><input id="avatar-file" type="file" accept="video/mp4,video/quicktime,video/webm,.mkv"><span class="upload-icon">⇧</span><strong>Chọn video avatar</strong><small>MP4, MOV, MKV, WebM · tối đa 500 MB</small></label>
+            <button class="secondary full" id="upload-avatar">Tải lên và chuẩn hóa</button>
+          </article>
+          <article class="card form-card">
+            <div class="field"><label>Facebook Live / Post ID</label><input id="fb-object" placeholder="123456789…"></div>
+            <div class="field"><label>Page access token</label><input id="fb-token" type="password" autocomplete="off" placeholder="Giữ trống để dùng token đã lưu"></div>
+            <div class="field"><label>Facebook RTMPS URL + stream key</label><input id="fb-stream" type="password" autocomplete="off" placeholder="rtmps://live-api-s.facebook.com:443/rtmp/…"></div>
+            <div class="two-col"><div class="field"><label>Quét comment</label><div class="suffix"><input id="poll-seconds" type="number" min="0.5" max="30" step="0.5" value="2"><span>giây</span></div></div><div class="field"><label>Gom batch</label><div class="suffix"><input id="batch-seconds" type="number" min="0.5" max="30" step="0.5" value="2"><span>giây</span></div></div></div>
+            <button class="primary full" id="save-live">Lưu cấu hình Live</button>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+  <div id="toast" role="status"></div>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
