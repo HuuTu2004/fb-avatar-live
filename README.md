@@ -49,7 +49,9 @@ chmod +x scripts/*.sh
 `install_supervisor.sh` tạo `.env` nếu cần, cài năm service và đăng ký **Avatar Live Studio** vào Vast Instance Portal. Mở app đó từ portal, hoặc dùng SSH tunnel riêng:
 
 ```bash
-ssh -p 21929 root@220.86.159.73 -L 8088:127.0.0.1:18080
+ssh -p 21929 root@220.86.159.73 \
+  -L 8088:127.0.0.1:18080 \
+  -L 8189:127.0.0.1:8189
 # mở http://localhost:8088
 ```
 

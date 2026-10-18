@@ -14,9 +14,10 @@ webrtc: true
 webrtcAddress: 127.0.0.1:8889
 webrtcAllowOrigins: ['*']
 webrtcLocalUDPAddress: ''
-webrtcLocalTCPAddress: ''
-webrtcICEServers2:
-  - url: stun:stun.l.google.com:19302
+webrtcLocalTCPAddress: 127.0.0.1:8189
+webrtcIPsFromInterfaces: false
+webrtcAdditionalHosts: ['127.0.0.1']
+webrtcICEServers2: []
 
 api: true
 apiAddress: 127.0.0.1:9997
