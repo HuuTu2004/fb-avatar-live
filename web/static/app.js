@@ -46,7 +46,7 @@ function updateStatus(data) {
   ];
   if (['facebook', 'both'].includes(data.comment_source)) checks.push(['Facebook comments', data.configured.facebook]);
   if (['tiktok', 'both'].includes(data.comment_source)) checks.push(['TikTok comments', data.configured.tiktok]);
-  checks.push(['Đích phát', data.configured.facebook_stream || data.configured.tiktok_stream]);
+  if (data.configured.facebook_stream || data.configured.tiktok_stream) checks.push(['Đích phát', true]);
   checks.push(['MuseTalk', data.services.musetalk === 'RUNNING']);
   $('#checklist').innerHTML = checks.map(([name, ok]) => `<div class="check"><b>${name}</b><i class="${ok ? 'ok' : ''}">${ok ? 'Sẵn sàng' : 'Chưa xong'}</i></div>`).join('');
   $('#fb-object').value = data.fb_object_id || '';

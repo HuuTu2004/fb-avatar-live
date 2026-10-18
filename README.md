@@ -67,6 +67,8 @@ FACEBOOK_STREAM_URL=rtmps://...private-stream-key...
 TIKTOK_STREAM_URL=rtmp://...private-stream-key...
 ```
 
+Để xem WebRTC trước khi live thật, chọn **Chỉ preview · dùng câu thử**, để trống cả hai stream URL, bấm **Bắt đầu preview / live**, rồi gửi câu kiểm tra trên Dashboard. Đích Facebook/TikTok là tùy chọn; forwarder chỉ chờ khi chưa có URL nên không phát ra ngoài.
+
 Không commit `.env`; token Facebook, API key LLM và stream key đều là bí mật.
 
 Các service được Supervisor quản lý:

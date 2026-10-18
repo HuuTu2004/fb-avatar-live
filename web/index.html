@@ -47,7 +47,7 @@
           <article class="card control-card">
             <div class="card-head"><div><p class="label">CONTROL</p><h2>Phiên phát</h2></div></div>
             <div class="checklist" id="checklist"></div>
-            <div class="button-stack"><button class="primary" id="start-live">Bắt đầu live</button><button class="danger" id="stop-live">Dừng phiên phát</button></div>
+            <div class="button-stack"><button class="primary" id="start-live">Bắt đầu preview / live</button><button class="danger" id="stop-live">Dừng phiên phát</button></div>
             <div class="divider"></div>
             <label>Câu kiểm tra</label>
             <textarea id="test-message" rows="3">Xin chào, hãy giới thiệu ngắn về buổi livestream này.</textarea>
@@ -98,7 +98,7 @@
             <button class="secondary full" id="upload-avatar">Tải lên và chuẩn hóa</button>
           </article>
           <article class="card form-card">
-            <div class="field"><label>Nguồn comment</label><select id="comment-source"><option value="facebook">Facebook</option><option value="tiktok">TikTok</option><option value="both">Facebook + TikTok</option></select></div>
+            <div class="field"><label>Nguồn comment</label><select id="comment-source"><option value="demo">Chỉ preview · dùng câu thử</option><option value="facebook">Facebook</option><option value="tiktok">TikTok</option><option value="both">Facebook + TikTok</option></select></div>
             <div class="field"><label>Facebook Live / Post ID</label><input id="fb-object" placeholder="123456789…"></div>
             <div class="field"><label>Page access token</label><input id="fb-token" type="password" autocomplete="off" placeholder="Giữ trống để dùng token đã lưu"></div>
             <div class="field"><label>Facebook RTMPS URL + stream key</label><input id="fb-stream" type="password" autocomplete="off" placeholder="rtmps://live-api-s.facebook.com:443/rtmp/…"></div>

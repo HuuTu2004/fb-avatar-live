@@ -47,7 +47,7 @@ class PreviewPayload(BaseModel):
 
 
 class LivePayload(BaseModel):
-    comment_source: str = Field(default="both", pattern="^(facebook|tiktok|both)$")
+    comment_source: str = Field(default="demo", pattern="^(facebook|tiktok|both|demo)$")
     fb_object_id: str
     fb_page_access_token: str = ""
     facebook_stream_url: str = ""
@@ -453,8 +453,6 @@ def _start_live() -> None:
         missing.append("facebook comments")
     if source in {"tiktok", "both"} and not configured["tiktok"]:
         missing.append("tiktok comments")
-    if not configured["facebook_stream"] and not configured["tiktok_stream"]:
-        missing.append("Facebook or TikTok stream URL")
     if missing:
         raise ValueError("Thiếu cấu hình: " + ", ".join(missing))
     for name in SERVICES:
