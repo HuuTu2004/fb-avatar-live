@@ -2,6 +2,7 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 let state = null;
 let previewAudioEnabled = false;
+let liveFormLoaded = false;
 
 function toast(message, error = false) {
   const box = $('#toast');
@@ -38,7 +39,10 @@ function updateStatus(data) {
   $('#metric-preview').textContent = data.preview_ready ? 'Có tín hiệu' : 'Chờ tín hiệu';
   $('#metric-openai').textContent = data.configured.openai ? data.openai_model || 'Đã cấu hình' : 'Chưa cấu hình';
   const channelCount = Number(data.configured.facebook_stream) + Number(data.configured.tiktok_stream);
-  $('#metric-channels').textContent = channelCount ? `${channelCount} kênh sẵn sàng` : 'Thiếu cấu hình';
+  $('#metric-channels').textContent = data.services.forwarder === 'RUNNING' ?
+    (data.forwarder_health?.facebook === 'sending' ? 'Facebook đang gửi' : 'Facebook đang thử kết nối') :
+    data.services['tiktok-forwarder'] === 'RUNNING' ? 'TikTok đang gửi' :
+    channelCount ? `${channelCount} kênh đã lưu` : 'Chưa cấu hình';
   $('#global-dot').classList.toggle('ok', running);
   $('#global-text').textContent = running ? 'Pipeline đang chạy' : 'Pipeline đang dừng';
 
@@ -48,13 +52,35 @@ function updateStatus(data) {
   ];
   if (['facebook', 'both'].includes(data.comment_source)) checks.push(['Facebook comments', data.configured.facebook]);
   if (['tiktok', 'both'].includes(data.comment_source)) checks.push(['TikTok comments', data.configured.tiktok]);
-  if (data.configured.facebook_stream || data.configured.tiktok_stream) checks.push(['Đích phát', true]);
+  if (data.configured.facebook_stream || data.configured.tiktok_stream) checks.push(['Đích phát đã lưu', true]);
   checks.push(['MuseTalk', data.services.musetalk === 'RUNNING']);
   $('#checklist').innerHTML = checks.map(([name, ok]) => `<div class="check"><b>${name}</b><i class="${ok ? 'ok' : ''}">${ok ? 'Sẵn sàng' : 'Chưa xong'}</i></div>`).join('');
-  $('#fb-object').value = data.fb_object_id || '';
-  $('#comment-source').value = data.comment_source || 'facebook';
-  $('#demo-sales-mode').checked = Boolean(data.demo_sales_mode);
-  $('#tiktok-user').value = data.tiktok_unique_id ? `@${data.tiktok_unique_id}` : '';
+  if (!liveFormLoaded) {
+    $('#fb-object').value = data.fb_object_id || '';
+    $('#fb-server').value = data.facebook_server_url || 'rtmps://live-api-s.facebook.com:443/rtmp/';
+    $('#comment-source').value = data.comment_source || 'demo';
+    $('#demo-sales-mode').checked = Boolean(data.demo_sales_mode);
+    $('#tiktok-user').value = data.tiktok_unique_id ? `@${data.tiktok_unique_id}` : '';
+    $('#poll-seconds').value = data.poll_seconds || 2;
+    $('#batch-seconds').value = data.batch_seconds || 2;
+    liveFormLoaded = true;
+    showChannelSettings();
+  }
+  const facebookRunning = data.services.forwarder === 'RUNNING';
+  const facebookHealth = data.forwarder_health?.facebook;
+  $('#facebook-status').textContent = facebookRunning && facebookHealth === 'retrying' ?
+    'Kết nối Facebook bị ngắt; hệ thống đang thử lại. Dừng gửi rồi kiểm tra URL và khóa luồng trong Live Producer.' :
+    facebookRunning && facebookHealth === 'sending' ? 'Đang gửi tín hiệu đến Facebook · kiểm tra hình/tiếng trong Live Producer' :
+    facebookRunning ? 'Đang kết nối Facebook · dừng gửi trước khi sửa cấu hình' :
+    data.has_fb_stream_url ? (data.preview_ready ? 'Đã lưu khóa luồng · sẵn sàng gửi tín hiệu' : 'Đã lưu khóa luồng · bật preview trước khi gửi') : 'Chưa lưu khóa luồng Facebook';
+  $('#facebook-status').classList.toggle('ok', facebookHealth === 'sending');
+  $('#start-facebook').disabled = facebookRunning || !data.has_fb_stream_url || !data.preview_ready;
+  $('#stop-facebook').disabled = !facebookRunning;
+  const tiktokRunning = data.services['tiktok-forwarder'] === 'RUNNING';
+  $('#start-tiktok').disabled = tiktokRunning || !data.has_tiktok_stream_url || !data.preview_ready;
+  $('#stop-tiktok').disabled = !tiktokRunning;
+  $('#save-live').disabled = facebookRunning || tiktokRunning;
+  $('#live-save-hint').hidden = !(facebookRunning || tiktokRunning);
   $('#openai-key-hint').textContent = data.has_openai_key ? 'Đã có key lưu trên máy. Giữ trống để tiếp tục dùng.' : 'Key chỉ được lưu trong .env trên máy Vast.';
   if (data.openai_model && ![...$('#openai-model').options].some(o => o.value === data.openai_model)) {
     $('#openai-model').add(new Option(data.openai_model, data.openai_model));
@@ -62,6 +88,12 @@ function updateStatus(data) {
   }
   if (data.configured.avatar) loadAvatar();
   if (data.preview_ready) loadPreview();
+}
+
+function showChannelSettings() {
+  const source = $('#comment-source').value;
+  $('#fb-page-comments').hidden = !['facebook', 'both'].includes(source);
+  $('#tiktok-settings').hidden = !['tiktok', 'both'].includes(source);
 }
 
 async function refreshStatus(showError = false) {
@@ -119,6 +151,7 @@ $$('.nav').forEach(button => button.addEventListener('click', () => {
 }));
 
 $('#refresh').onclick = () => refreshStatus(true);
+$('#comment-source').onchange = showChannelSettings;
 $('#reload-preview').onclick = () => loadPreview(true);
 $('#toggle-audio').onclick = async () => {
   previewAudioEnabled = true;
@@ -196,11 +229,13 @@ $('#save-live').onclick = async () => {
     await api('/api/live/save', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       comment_source:$('#comment-source').value,
       fb_object_id:$('#fb-object').value, fb_page_access_token:$('#fb-token').value,
-      facebook_stream_url:$('#fb-stream').value, tiktok_unique_id:$('#tiktok-user').value,
+      facebook_server_url:$('#fb-server').value, facebook_stream_key:$('#fb-key').value,
+      tiktok_unique_id:$('#tiktok-user').value,
       tiktok_stream_url:$('#tiktok-stream').value, poll_seconds:Number($('#poll-seconds').value), batch_seconds:Number($('#batch-seconds').value),
       demo_sales_mode:$('#demo-sales-mode').checked
     })});
-    $('#fb-token').value = ''; $('#fb-stream').value = ''; $('#tiktok-stream').value = ''; toast('Đã lưu cấu hình kênh Live'); refreshStatus();
+    $('#fb-token').value = ''; $('#fb-key').value = ''; $('#tiktok-stream').value = '';
+    liveFormLoaded = false; toast('Đã lưu cấu hình kênh Live'); refreshStatus();
   } catch (error) { toast(error.message, true); }
   finally { busy(button, false); }
 };
@@ -211,9 +246,22 @@ $('#start-live').onclick = async () => {
   finally { busy(button,false); }
 };
 $('#stop-live').onclick = async () => {
-  try { await api('/api/live/stop',{method:'POST'}); toast('Đã dừng phiên phát'); refreshStatus(); }
+  try { await api('/api/live/stop',{method:'POST'}); toast('Đã dừng preview và các kênh'); refreshStatus(); }
   catch (error) { toast(error.message,true); }
 };
+async function channelAction(channel, action, button) {
+  busy(button, true);
+  try {
+    const data = await api(`/api/live/${channel}/${action}`, {method:'POST'});
+    toast(data.message || `Đã dừng gửi ${channel}`);
+    await refreshStatus(true);
+  } catch (error) { toast(error.message, true); }
+  finally { busy(button, false); }
+}
+$('#start-facebook').onclick = () => channelAction('facebook', 'start', $('#start-facebook'));
+$('#stop-facebook').onclick = () => channelAction('facebook', 'stop', $('#stop-facebook'));
+$('#start-tiktok').onclick = () => channelAction('tiktok', 'start', $('#start-tiktok'));
+$('#stop-tiktok').onclick = () => channelAction('tiktok', 'stop', $('#stop-tiktok'));
 $('#test-live').onclick = async () => {
   const message = $('#test-message').value.trim();
   if (!message) { toast('Nhập bình luận trước khi gửi', true); return; }

@@ -144,7 +144,26 @@ class SegmentStreamer:
             "-s", f"{self.settings.output_width}x{self.settings.output_height}",
             "-r", str(self.settings.output_fps), "-i", f"pipe:{video_read}",
             "-thread_queue_size", "512", "-re", "-f", "s16le", "-ar", "48000", "-ac", "2",
-            "-i", f"pipe:{audio_read}", *self._encoder_args(), "-g", str(max(1, self.settings.output_fps // 5)),
+            "-i", f"pipe:{audio_read}",
+        ]
+        music_file = os.getenv("BACKGROUND_MUSIC_FILE", "").strip()
+        if music_file:
+            if not Path(music_file).is_file():
+                raise FileNotFoundError(f"BACKGROUND_MUSIC_FILE does not exist: {music_file}")
+            volume = float(os.getenv("BACKGROUND_MUSIC_VOLUME", "0.10"))
+            if not 0 <= volume <= 1:
+                raise ValueError("BACKGROUND_MUSIC_VOLUME must be between 0 and 1")
+            command += [
+                "-stream_loop", "-1", "-re", "-i", music_file,
+                "-filter_complex",
+                f"[2:a]aresample=48000,volume={volume}[music];"
+                "[1:a][music]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[mixed]",
+                "-map", "0:v:0", "-map", "[mixed]",
+            ]
+        else:
+            command += ["-map", "0:v:0", "-map", "1:a:0"]
+        command += [
+            *self._encoder_args(), "-g", str(max(1, self.settings.output_fps // 5)),
             "-pix_fmt", "yuv420p", *self._output_args(),
         ]
         return subprocess.Popen(command, pass_fds=(video_read, audio_read))

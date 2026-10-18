@@ -6,13 +6,13 @@ ROOT="${ROOT:-/workspace/fb-avatar-live}"
 chmod 600 "$ROOT/.env"
 
 make_wrapper() {
-  local name="$1" script="$2"
+  local name="$1" script="$2" channel="${3:-}"
   cat >"/opt/supervisor-scripts/${name}.sh" <<EOF
 #!/usr/bin/env bash
 utils=/opt/supervisor-scripts/utils
 . "\${utils}/logging.sh"
 . "\${utils}/environment.sh"
-exec "$ROOT/scripts/$script"
+exec "$ROOT/scripts/$script" "$channel"
 EOF
   chmod +x "/opt/supervisor-scripts/${name}.sh"
 }
@@ -21,6 +21,7 @@ make_wrapper fb-avatar-mediamtx run_mediamtx.sh
 make_wrapper fb-avatar-musetalk run_musetalk.sh
 make_wrapper fb-avatar-pipeline run_pipeline.sh
 make_wrapper fb-avatar-forwarder run_forwarder.sh
+make_wrapper fb-avatar-tiktok-forwarder run_forwarder.sh tiktok
 
 cat >/opt/supervisor-scripts/fb-avatar-control.sh <<EOF
 #!/usr/bin/env bash
@@ -33,12 +34,12 @@ EOF
 chmod +x /opt/supervisor-scripts/fb-avatar-control.sh "$ROOT"/scripts/*.sh
 
 write_service() {
-  local name="$1" priority="$2" startsecs="$3"
+  local name="$1" priority="$2" startsecs="$3" autostart="${4:-true}"
   cat >"/etc/supervisor/conf.d/${name}.conf" <<EOF
 [program:${name}]
 environment=PROC_NAME="%(program_name)s"
 command=/opt/supervisor-scripts/${name}.sh
-autostart=true
+autostart=${autostart}
 autorestart=unexpected
 startsecs=${startsecs}
 stdout_logfile=/dev/stdout
@@ -54,7 +55,8 @@ write_service fb-avatar-mediamtx 10 3
 write_service fb-avatar-control 15 3
 write_service fb-avatar-musetalk 20 10
 write_service fb-avatar-pipeline 30 10
-write_service fb-avatar-forwarder 40 3
+write_service fb-avatar-forwarder 40 3 false
+write_service fb-avatar-tiktok-forwarder 40 3 false
 
 /venv/main/bin/python - <<'PY'
 import yaml
@@ -75,4 +77,4 @@ PY
 supervisorctl reread
 supervisorctl update
 supervisorctl restart caddy
-supervisorctl status fb-avatar-mediamtx fb-avatar-control fb-avatar-musetalk fb-avatar-pipeline fb-avatar-forwarder || true
+supervisorctl status fb-avatar-mediamtx fb-avatar-control fb-avatar-musetalk fb-avatar-pipeline fb-avatar-forwarder fb-avatar-tiktok-forwarder || true

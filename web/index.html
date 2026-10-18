@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>Avatar Live Studio</title>
-  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/app.css?v=fb-personal-3">
 </head>
 <body>
   <div class="shell">
@@ -36,10 +36,10 @@
 
         <div class="grid dashboard-grid">
           <article class="card preview-card">
-            <div class="card-head"><div><p class="label">LOW LATENCY PREVIEW</p><h2>Live WebRTC</h2></div><span class="live-badge"><i></i> LIVE</span></div>
+            <div class="card-head"><div><p class="label">LOW LATENCY PREVIEW</p><h2>Live WebRTC</h2></div><span class="live-badge"><i></i> PREVIEW</span></div>
             <div class="stage">
               <iframe id="live-frame" title="WebRTC live preview" allow="autoplay; fullscreen; picture-in-picture"></iframe>
-              <div class="stage-empty" id="stage-empty"><span>◈</span><strong>Chưa có tín hiệu</strong><small>Khởi động live để mở preview WebRTC</small></div>
+              <div class="stage-empty" id="stage-empty"><span>◈</span><strong>Chưa có tín hiệu</strong><small>Bắt đầu preview để xem trên web</small></div>
             </div>
             <div class="stream-meta"><span><i class="dot green-dot"></i> H.264 / Opus</span><span>1280 × 720</span><span>25 FPS</span><button class="link-btn" id="toggle-audio">Bật âm thanh</button><button class="link-btn" id="reload-preview">Tải lại preview</button></div>
           </article>
@@ -47,7 +47,7 @@
           <article class="card control-card">
             <div class="card-head"><div><p class="label">CONTROL</p><h2>Phiên phát</h2></div></div>
             <div class="checklist" id="checklist"></div>
-            <div class="button-stack"><button class="primary" id="start-live">Bắt đầu preview / live</button><button class="danger" id="stop-live">Dừng phiên phát</button></div>
+            <div class="button-stack"><button class="primary" id="start-live">Bắt đầu preview</button><button class="danger" id="stop-live">Dừng tất cả</button></div>
             <div class="divider"></div>
             <label for="test-message">Bình luận thử như người xem</label>
             <textarea id="test-message" rows="3" placeholder="Ví dụ: Vô thường là gì?"></textarea>
@@ -89,7 +89,7 @@
       </section>
 
       <section class="page" id="avatar">
-        <div class="intro"><div><p class="eyebrow">HẠNG MỤC 04</p><h2>Avatar & kênh Live</h2><p>Chọn nguồn comment và phát cùng một avatar lên Facebook, TikTok hoặc cả hai.</p></div><span class="hero-icon amber">◇</span></div>
+        <div class="intro"><div><p class="eyebrow">HẠNG MỤC 04</p><h2>Avatar & kênh Live</h2><p>Cấu hình Facebook cá nhân, xem thử trên web rồi chủ động gửi tín hiệu lên Facebook.</p></div><span class="hero-icon amber">◇</span></div>
         <div class="grid avatar-grid">
           <article class="card">
             <div class="card-head"><h2>Avatar video</h2><span class="tag">25 FPS</span></div>
@@ -98,22 +98,39 @@
             <button class="secondary full" id="upload-avatar">Tải lên và chuẩn hóa</button>
           </article>
           <article class="card form-card">
-            <div class="field"><label>Nguồn comment</label><select id="comment-source"><option value="demo">Chỉ preview · dùng câu thử</option><option value="facebook">Facebook</option><option value="tiktok">TikTok</option><option value="both">Facebook + TikTok</option></select></div>
+            <div class="field"><label>Nguồn bình luận</label><select id="comment-source"><option value="demo">Facebook cá nhân · bình luận thử trên web</option><option value="facebook">Facebook Page · đọc bình luận bằng Page token</option><option value="tiktok">TikTok · đọc bình luận LIVE</option><option value="both">Facebook Page + TikTok</option></select></div>
             <label class="result demo-toggle"><input id="demo-sales-mode" type="checkbox"> Chia sẻ Phật pháp nói liên tục để kiểm tra độ mượt. Nếu chưa có OpenAI key, hệ thống dùng kịch bản nội bộ.</label>
-            <div class="field"><label>Facebook Live / Post ID</label><input id="fb-object" placeholder="123456789…"></div>
-            <div class="field"><label>Page access token</label><input id="fb-token" type="password" autocomplete="off" placeholder="Giữ trống để dùng token đã lưu"></div>
-            <div class="field"><label>Facebook RTMPS URL + stream key</label><input id="fb-stream" type="password" autocomplete="off" placeholder="rtmps://live-api-s.facebook.com:443/rtmp/…"></div>
-            <div class="field"><label>TikTok LIVE @username</label><input id="tiktok-user" autocomplete="off" placeholder="@ten_tai_khoan"></div>
-            <div class="field"><label>TikTok RTMP URL + stream key</label><input id="tiktok-stream" type="password" autocomplete="off" placeholder="rtmp://push-rtmp-…/live/…"></div>
-            <div class="result">Comment TikTok dùng kết nối Webcast không chính thức vì TikTok chưa có API công khai cho LIVE chat. RTMP/stream key lấy trong TikTok LIVE Center.</div>
+            <div class="channel-panel">
+              <h3>Phát Facebook cá nhân</h3>
+              <p>Mở <a href="https://www.facebook.com/live/producer/" target="_blank" rel="noreferrer">Facebook Live Producer ↗</a>, chọn trang cá nhân và <strong>Phần mềm phát trực tiếp</strong>. Sao chép URL máy chủ và khóa luồng vào hai ô dưới đây.</p>
+              <div class="field"><label for="fb-server">URL máy chủ Facebook</label><input id="fb-server" type="url" autocomplete="off" value="rtmps://live-api-s.facebook.com:443/rtmp/"></div>
+              <div class="field"><label for="fb-key">Khóa luồng Facebook</label><input id="fb-key" type="password" autocomplete="off" placeholder="Dán khóa FB-…; để trống nếu đã lưu"><small>Khóa chỉ lưu trong .env trên máy Vast, không hiển thị lại trên web.</small></div>
+              <div class="result" id="facebook-status">Lưu cấu hình, bật preview, rồi mới gửi tín hiệu Facebook.</div>
+              <div class="button-stack"><button class="primary" id="start-facebook">Bắt đầu gửi lên Facebook</button><button class="danger" id="stop-facebook">Dừng gửi Facebook</button></div>
+              <p>Sau khi Facebook nhận tín hiệu, kiểm tra hình/tiếng trong Live Producer và bấm <strong>Phát trực tiếp</strong> tại đó. Nút preview trên web không phát lên Facebook.</p>
+            </div>
+            <div class="channel-panel" id="fb-page-comments" hidden>
+              <h3>Đọc bình luận Facebook Page</h3>
+              <p>Chỉ dùng cho Page bạn quản lý. Live trên trang cá nhân vẫn có thể phát hình/tiếng, còn ứng dụng hiện dùng bình luận thử trên web.</p>
+              <div class="field"><label for="fb-object">Page Live / Post ID</label><input id="fb-object" placeholder="123456789…"></div>
+              <div class="field"><label for="fb-token">Page access token</label><input id="fb-token" type="password" autocomplete="off" placeholder="Giữ trống để dùng token đã lưu"></div>
+            </div>
+            <div class="channel-panel" id="tiktok-settings" hidden>
+              <h3>TikTok</h3>
+              <div class="field"><label for="tiktok-user">TikTok LIVE @username</label><input id="tiktok-user" autocomplete="off" placeholder="@ten_tai_khoan"></div>
+              <div class="field"><label for="tiktok-stream">TikTok RTMP URL + stream key</label><input id="tiktok-stream" type="password" autocomplete="off" placeholder="rtmp://push-rtmp-…/live/…"></div>
+              <div class="result">Bình luận TikTok dùng kết nối Webcast; RTMP/stream key lấy trong TikTok LIVE Center.</div>
+              <div class="button-stack"><button class="primary" id="start-tiktok">Bắt đầu gửi TikTok</button><button class="danger" id="stop-tiktok">Dừng gửi TikTok</button></div>
+            </div>
             <div class="two-col"><div class="field"><label>Quét comment</label><div class="suffix"><input id="poll-seconds" type="number" min="0.5" max="30" step="0.5" value="2"><span>giây</span></div></div><div class="field"><label>Gom batch</label><div class="suffix"><input id="batch-seconds" type="number" min="0.5" max="30" step="0.5" value="2"><span>giây</span></div></div></div>
             <button class="primary full" id="save-live">Lưu cấu hình Live</button>
+            <small id="live-save-hint" hidden>Dừng gửi Facebook/TikTok trước khi đổi cấu hình Live.</small>
           </article>
         </div>
       </section>
     </main>
   </div>
   <div id="toast" role="status"></div>
-  <script src="/static/app.js" defer></script>
+  <script src="/static/app.js?v=fb-personal-3" defer></script>
 </body>
 </html>

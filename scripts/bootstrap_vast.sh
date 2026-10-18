@@ -18,6 +18,9 @@ fi
 
 uv venv --python 3.11 "$ROOT/.venv"
 uv pip install --python "$ROOT/.venv/bin/python" -e "$ROOT"
+# The pipeline adds this target directory to PYTHONPATH for CUDA ZeroTTS.
+uv pip install --python "$ROOT/.venv/bin/python" --target "$ROOT/.venv/ortgpu" \
+  --no-deps onnxruntime-gpu==1.30.0
 "$ROOT/.venv/bin/hf" download zeroweight-ai/ZeroTTS --local-dir "$MODEL_ROOT"
 
 case "$(uname -m)" in

@@ -37,6 +37,8 @@ TikTok hiện không có API công khai chính thức để đọc comment LIVE.
 
 ## Cài trên Vast.ai
 
+Hướng dẫn dựng lại đúng cấu hình preview đang chạy: [VAST_SETUP.md](VAST_SETUP.md).
+
 Repo nên nằm tại `/workspace/fb-avatar-live`:
 
 ```bash
@@ -69,7 +71,9 @@ FACEBOOK_STREAM_URL=rtmps://...private-stream-key...
 TIKTOK_STREAM_URL=rtmp://...private-stream-key...
 ```
 
-Để xem WebRTC trước khi live thật, chọn **Chỉ preview · dùng câu thử**, để trống cả hai stream URL, bấm **Bắt đầu preview / live**, rồi gửi câu kiểm tra trên Dashboard. Đích Facebook/TikTok là tùy chọn; forwarder chỉ chờ khi chưa có URL nên không phát ra ngoài.
+Để xem WebRTC trước khi live thật, chọn **Facebook cá nhân · bình luận thử trên web**, bấm **Bắt đầu preview**, rồi gửi câu kiểm tra trên Dashboard. Nút này chỉ chạy preview, không gửi tín hiệu ra Facebook/TikTok.
+
+Để phát trên Facebook cá nhân, mở [Live Producer](https://www.facebook.com/live/producer/), chọn trang cá nhân và **Phần mềm phát trực tiếp**. Trong mục Avatar & Live, nhập riêng **URL máy chủ** và **khóa luồng**, bấm **Lưu cấu hình Live**, chờ preview có hình/tiếng rồi bấm **Bắt đầu gửi lên Facebook**. Kiểm tra tín hiệu trong Live Producer và bấm **Phát trực tiếp** tại Facebook. **Dừng gửi Facebook** chỉ tắt đường phát ra Facebook; preview vẫn chạy. Đọc bình luận tự động bằng Page token là tùy chọn riêng cho Facebook Page; luồng cá nhân hiện dùng ô bình luận thử trên web.
 
 Để kiểm tra avatar nói liên tục, bật **Chia sẻ Phật pháp nói liên tục** trong mục Avatar & Live. Khi chưa có OpenAI key, pipeline dùng vòng kịch bản nội bộ; sau khi lưu OpenAI key và model, cùng chế độ này sẽ dùng OpenAI để tạo lời dẫn từ các chủ đề giáo lý luân phiên.
 
@@ -80,7 +84,7 @@ Các service được Supervisor quản lý:
 ```bash
 supervisorctl status \
   fb-avatar-control fb-avatar-mediamtx fb-avatar-musetalk \
-  fb-avatar-pipeline fb-avatar-forwarder
+  fb-avatar-pipeline fb-avatar-forwarder fb-avatar-tiktok-forwarder
 ```
 
 Control panel được bảo vệ bởi lớp token của Vast/Caddy. MediaMTX chỉ bind HTTP/RTSP vào localhost; WebRTC dùng STUN để thiết lập media path. Mạng chặn UDP hoặc symmetric NAT nên cấu hình thêm TURN trong `config/mediamtx.yml`.
@@ -124,6 +128,9 @@ Pipeline vẫn gọi LLM, ZeroTTS, MuseTalk và stream thật. Preview nằm t�
 - `MUSETALK_BBOX_SMOOTH_WINDOW=7`: lọc dao động của face detector để vùng miệng không co giãn hoặc rung giữa các frame.
 - `IDLE_CHUNK_SECONDS=0.2`: giới hạn độ lệch khi video và audio cùng chuyển từ idle sang clip nói.
 - `AVATAR_IDLE_FRAME_SECONDS=4`: tùy chọn lấy một frame miệng khép từ video gốc để hiển thị khi chờ câu nói; tránh cảnh miệng cử động trong lúc âm thanh im lặng. Bỏ trống để giữ cách phát video idle cũ.
+- `BACKGROUND_MUSIC_FILE=assets/meditation-ambient.ogg` và `BACKGROUND_MUSIC_VOLUME=0.10`: lặp nhạc nền nhẹ liên tục dưới giọng nói trong preview. Để trống đường dẫn để tắt nhạc; chỉnh âm lượng từ 0 đến 1.
+
+Nhạc nền mặc định: [“Promise” của Keith Adler](https://commons.wikimedia.org/wiki/File:Promise.ogg), tác giả đã phát hành vào phạm vi công cộng (public domain). Bản trong `assets/` đã cắt đoạn im lặng và nối chéo đầu/cuối để lặp êm hơn.
 
 Các đoạn trả lời được chia theo câu và chạy theo dây chuyền CPU/GPU, nên ZeroTTS có thể chuẩn bị đoạn kế tiếp trong lúc MuseTalk render đoạn hiện tại. Nếu lượng comment lớn hơn tốc độ phát lời, hàng đợi tạo backpressure thay vì mở thêm model hoặc làm tràn VRAM.
 
