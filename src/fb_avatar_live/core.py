@@ -344,10 +344,15 @@ class ZeroTTSEngine:
         from zerotts import ZeroTTS
 
         self.settings = settings
+        providers = (["CUDAExecutionProvider", "CPUExecutionProvider"]
+                     if settings.zerotts_provider == "cuda" else ["CPUExecutionProvider"])
         self.model = ZeroTTS.from_pretrained(
             settings.zerotts_model_dir,
+            providers=providers,
             intra_op_num_threads=settings.zerotts_threads,
         )
+        if settings.zerotts_provider == "cuda" and self.model.prefix_step_sess.get_providers()[0] != "CUDAExecutionProvider":
+            raise RuntimeError("ZeroTTS CUDA provider did not start")
         if settings.zerotts_warmup:
             from zerotts.text_norm import normalize_vi_text
 
@@ -366,6 +371,7 @@ class ZeroTTSEngine:
 class MuseTalkClient:
     def __init__(self, settings: Settings, client: httpx.AsyncClient):
         self.url = settings.musetalk_url
+        self.fps = settings.output_fps
         self.client = client
 
     async def wait_ready(self) -> None:
@@ -387,7 +393,9 @@ class MuseTalkClient:
             timeout=None,
         )
         response.raise_for_status()
-        return Path(response.json()["video_path"])
+        result = response.json()
+        log.info("MuseTalk rendered %.2fs of video in %.2fs", result["frames"] / self.fps, result["elapsed_seconds"])
+        return Path(result["video_path"])
 
 
 class Pipeline:
@@ -443,12 +451,16 @@ class Pipeline:
                 log.exception("LLM reply failed; comments remain pending")
 
     async def synthesize_audio(self) -> None:
+        import soundfile as sf
+
         output_dir = self.settings.data_dir / "audio"
         while True:
             job = await self.text_queue.get()
             self.synthesizing += 1
             try:
+                started = time.perf_counter()
                 audio = await asyncio.to_thread(self.tts.synthesize, job, output_dir)
+                log.info("ZeroTTS synthesized %.2fs of audio in %.2fs", sf.info(audio.path).duration, time.perf_counter() - started)
                 await self.audio_queue.put(audio)
                 log.info("Synthesized %s", audio.path.name)
             except Exception:

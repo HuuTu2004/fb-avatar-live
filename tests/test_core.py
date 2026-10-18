@@ -12,6 +12,7 @@ from fb_avatar_live.core import (
     ExternalLLM,
     Pipeline,
     SalesDemoLLM,
+    ZeroTTSEngine,
     split_utterances,
 )
 
@@ -64,6 +65,24 @@ class CoreTests(unittest.TestCase):
         second_script = asyncio.run(llm.reply([]))
         self.assertTrue(first_script)
         self.assertNotEqual(first_script, second_script)
+
+    def test_zerotts_cuda_does_not_silently_fall_back_to_cpu(self) -> None:
+        import sys
+        from unittest.mock import patch
+
+        class FakeZeroTTS:
+            providers = None
+
+            @classmethod
+            def from_pretrained(cls, model_dir, **kwargs):
+                cls.providers = kwargs["providers"]
+                return SimpleNamespace(prefix_step_sess=SimpleNamespace(get_providers=lambda: ["CPUExecutionProvider"]))
+
+        settings = SimpleNamespace(zerotts_provider="cuda", zerotts_model_dir="model", zerotts_threads=2)
+        with patch.dict(sys.modules, {"zerotts": SimpleNamespace(ZeroTTS=FakeZeroTTS)}):
+            with self.assertRaisesRegex(RuntimeError, "CUDA provider did not start"):
+                ZeroTTSEngine(settings)
+        self.assertEqual(FakeZeroTTS.providers[0], "CUDAExecutionProvider")
 
     def test_sales_demo_prefetches_and_answers_viewer_before_more_sales(self) -> None:
         import asyncio

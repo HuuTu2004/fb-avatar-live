@@ -112,7 +112,8 @@ Pipeline vẫn gọi LLM, ZeroTTS, MuseTalk và stream thật. Preview nằm t�
 - `FB_BATCH_SECONDS=2-3`: nhanh hơn nhưng gọi LLM nhiều hơn.
 - `FB_BATCH_SIZE=5-10`: số comment trong một lượt trả lời.
 - `LLM_MAX_REPLY_CHARS=180-260`: câu ngắn giúp clip đầu xuất hiện sớm.
-- `ZEROTTS_THREADS=4`: đo trên instance này nhanh hơn 8 threads (`1,2× realtime` thay vì `0,8×`).
+- `ZEROTTS_PROVIDER=cuda`: trên instance RTX 3090, cài riêng ONNX Runtime GPU bằng `uv pip install --python .venv/bin/python --target .venv/ortgpu --no-deps onnxruntime-gpu==1.30.0`, rồi khởi động lại pipeline. Script chạy tự thêm thư mục này vào Python path. Nếu không có GPU runtime tương thích, giữ `ZEROTTS_PROVIDER=cpu`.
+- `ZEROTTS_THREADS=2`: số luồng ONNX đang dùng với CUDA; với CPU có thể dùng 4.
 - `ZEROTTS_WARMUP=true`: tổng hợp một câu rất ngắn khi khởi động để lượt bình luận đầu không chịu chi phí khởi tạo ONNX.
 - `SPEECH_CHUNK_CHARS=260`: giữ trọn một lượt trả lời trong cùng ngữ cảnh audio của MuseTalk, tránh đoạn đuôi ngắn và điểm nối giữa câu.
 - Khi bật demo bán hàng và có OpenAI key, AI chọn góc nói khác nhau ở mỗi lượt, nhớ ba lượt gần nhất để nối ý và tránh lặp lời mở đầu. Nội dung sản phẩm lấy từ `LLM_SYSTEM_PROMPT`.

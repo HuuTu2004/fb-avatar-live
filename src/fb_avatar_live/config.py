@@ -61,6 +61,7 @@ class Settings:
     zerotts_model_dir: str
     zerotts_voice: str
     zerotts_threads: int
+    zerotts_provider: str
     zerotts_warmup: bool
     speech_chunk_chars: int
     musetalk_url: str
@@ -103,6 +104,7 @@ class Settings:
             zerotts_model_dir=os.getenv("ZEROTTS_MODEL_DIR", "zeroweight-ai/ZeroTTS"),
             zerotts_voice=os.getenv("ZEROTTS_VOICE", "maichi"),
             zerotts_threads=_integer("ZEROTTS_THREADS", 4),
+            zerotts_provider=os.getenv("ZEROTTS_PROVIDER", "cpu").lower(),
             zerotts_warmup=_boolean("ZEROTTS_WARMUP", True),
             speech_chunk_chars=_integer("SPEECH_CHUNK_CHARS", 260),
             musetalk_url=os.getenv("MUSETALK_URL", "http://127.0.0.1:18081").rstrip("/"),
@@ -135,6 +137,8 @@ class Settings:
             missing.append("TIKTOK_UNIQUE_ID")
         if self.comment_source not in {"facebook", "tiktok", "both", "demo"}:
             raise ValueError("COMMENT_SOURCE must be facebook, tiktok, both, or demo")
+        if self.zerotts_provider not in {"cpu", "cuda"}:
+            raise ValueError("ZEROTTS_PROVIDER must be cpu or cuda")
         required = [("STREAM_URL", self.stream_url)]
         if not (self.comment_source == "demo" and self.demo_sales_mode):
             required.extend(
