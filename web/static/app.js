@@ -100,6 +100,14 @@ $$('.nav').forEach(button => button.addEventListener('click', () => {
 
 $('#refresh').onclick = () => refreshStatus(true);
 $('#reload-preview').onclick = () => loadPreview(true);
+$('#toggle-audio').onclick = async () => {
+  const video = $('#live-frame').contentDocument?.querySelector('video');
+  if (!video) return toast('Preview chưa sẵn sàng, hãy tải lại preview', true);
+  video.muted = false;
+  video.volume = 1;
+  try { await video.play(); $('#toggle-audio').textContent = 'Âm thanh đã bật'; toast('Đã bật âm thanh preview'); }
+  catch (_) { toast('Chrome đang chặn âm thanh; hãy bấm biểu tượng loa trên video', true); }
+};
 $('#show-key').onclick = () => {
   const input = $('#groq-key'); input.type = input.type === 'password' ? 'text' : 'password';
   $('#show-key').textContent = input.type === 'password' ? 'Hiện' : 'Ẩn';
