@@ -258,13 +258,18 @@ class SalesDemoLLM:
     )
 
     def __init__(self):
-        self.index = 0
+        self.remaining_scripts: list[str] = []
+        self.last_script = ""
 
     async def reply(self, comments: list[Comment]) -> str:
         if comments:
             return f"Mình thấy câu hỏi của {comments[0].author}: {comments[0].message}. Mình sẽ kiểm tra thông tin chính xác để trả lời nhé."
-        text = self.scripts[self.index % len(self.scripts)]
-        self.index += 1
+        if not self.remaining_scripts:
+            self.remaining_scripts = random.sample(list(self.scripts), len(self.scripts))
+            if self.remaining_scripts[-1] == self.last_script:
+                self.remaining_scripts[0], self.remaining_scripts[-1] = self.remaining_scripts[-1], self.remaining_scripts[0]
+        text = self.remaining_scripts.pop()
+        self.last_script = text
         return text
 
 
@@ -299,13 +304,30 @@ class ExternalLLM:
         "Mời người xem tự quan sát bằng một câu hỏi ngắn, rồi giải thích một ý.",
         "So sánh hai cách phản ứng trước cùng một tình huống, không phán xét.",
     )
+    situations = (
+        "khi trò chuyện với người thân",
+        "khi có bất đồng trong công việc",
+        "khi bị hiểu lầm hoặc nhận lời khó nghe",
+        "khi một kế hoạch không thành",
+        "khi gặp một điều vui và muốn giữ mãi",
+        "khi phải chờ đợi hoặc thấy sốt ruột",
+        "khi so sánh mình với người khác",
+        "khi chăm sóc người đang mệt",
+        "khi đứng trước một lựa chọn khó",
+        "khi tiêu tiền hoặc chia sẻ của cải",
+        "khi ở một mình với nhiều suy nghĩ",
+        "khi có dịp giúp một người xa lạ",
+    )
 
     def __init__(self, settings: Settings, client: httpx.AsyncClient):
         self.settings = settings
         self.client = client
-        self.recent_replies: deque[str] = deque(maxlen=8)
+        self.recent_replies: deque[str] = deque(maxlen=24)
         self.remaining_angles: list[str] = []
         self.remaining_styles: list[str] = []
+        self.used_pairs: set[tuple[str, str]] = set()
+        self.last_angle = ""
+        self.last_situation = ""
 
     @staticmethod
     def _too_similar(text: str, previous: str) -> bool:
@@ -320,20 +342,32 @@ class ExternalLLM:
         if sales_mode and not comments:
             if not self.remaining_angles:
                 self.remaining_angles = random.sample(list(self.sales_angles), len(self.sales_angles))
+                if self.remaining_angles[-1] == self.last_angle:
+                    self.remaining_angles[0], self.remaining_angles[-1] = self.remaining_angles[-1], self.remaining_angles[0]
             angle = self.remaining_angles.pop()
+            self.last_angle = angle
+            if len(self.used_pairs) == len(self.sales_angles) * len(self.situations):
+                self.used_pairs.clear()
+            situations = [item for item in self.situations if (angle, item) not in self.used_pairs]
+            fresh = [item for item in situations if item != self.last_situation]
+            situation = random.choice(fresh or situations)
+            self.used_pairs.add((angle, situation))
+            self.last_situation = situation
             if not self.remaining_styles:
                 self.remaining_styles = random.sample(list(self.sales_styles), len(self.sales_styles))
             style = self.remaining_styles.pop()
             user_prompt = (
                 "Đang tiếp tục buổi chia sẻ Phật pháp bằng tiếng Việt. Hãy nói một lượt mới, "
                 "gồm 1 đến 2 câu tự nhiên, tổng dưới 200 ký tự để phát thành một clip. "
-                "Chủ đề lượt này: " + angle + ". Có thể nối sang ý liên quan nếu hợp mạch. "
+                "Chủ đề bắt buộc lượt này: " + angle + ". "
+                "Tình huống minh họa nếu phù hợp: " + situation + ". "
                 "Kiểu nói bắt buộc: " + style + " "
-                "Nối tiếp ý trước mà không lặp ý hoặc câu mở đầu. Giảng giải gần gũi, chính xác, "
+                "Nêu một chi tiết cụ thể của chủ đề; đừng tự chuyển về hơi thở hay chánh niệm nếu không liên quan. "
+                "Chuyển ý tự nhiên từ lượt trước nhưng tập trung vào chủ đề mới; không lặp giáo lý, ví dụ, kết luận hoặc câu mở đầu. Giảng giải gần gũi, chính xác, "
                 "không hứa hẹn phép màu hay kết quả tu tập, không bịa lời Phật, tên kinh hoặc tích truyện. "
                 "Nếu một cách hiểu thuộc riêng truyền thống nào, hãy nói rõ phạm vi; đừng nói thay mọi trường phái. "
                 "Không mở đầu bằng 'dạ', lời chào hay lời đáp bình luận; không nói về việc chọn chủ đề hoặc tạo kịch bản. "
-                "Các lượt vừa nói (tránh lặp ý và cách diễn đạt): " + json.dumps(list(self.recent_replies), ensure_ascii=False)
+                "Các lượt vừa nói (tránh lặp ý và cách diễn đạt): " + json.dumps(list(self.recent_replies)[-8:], ensure_ascii=False)
             )
         else:
             payload = [{"author": c.author, "comment": c.message} for c in comments]
@@ -343,7 +377,7 @@ class ExternalLLM:
                 "nếu người xem hỏi ngoài chủ đề, đáp ngắn rồi dẫn về buổi chia sẻ. "
                 "Phân biệt quan điểm giữa các truyền thống khi cần; nếu không chắc, nói rõ giới hạn hiểu biết. "
                 "Không bịa lời kinh, không tự nhận chứng ngộ, không mở đầu bằng 'dạ'. "
-                "Các lượt vừa nói: " + json.dumps(list(self.recent_replies), ensure_ascii=False) + "\n"
+                "Các lượt vừa nói: " + json.dumps(list(self.recent_replies)[-8:], ensure_ascii=False) + "\n"
                 + json.dumps(payload, ensure_ascii=False)
             )
         request_body = {

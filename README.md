@@ -116,7 +116,7 @@ Pipeline vẫn gọi LLM, ZeroTTS, MuseTalk và stream thật. Preview nằm t�
 - `ZEROTTS_THREADS=2`: số luồng ONNX đang dùng với CUDA; với CPU có thể dùng 4.
 - `ZEROTTS_WARMUP=true`: tổng hợp một câu rất ngắn khi khởi động để lượt bình luận đầu không chịu chi phí khởi tạo ONNX.
 - `SPEECH_CHUNK_CHARS=260`: giữ trọn một lượt trả lời trong cùng ngữ cảnh audio của MuseTalk, tránh đoạn đuôi ngắn và điểm nối giữa câu.
-- Khi bật chia sẻ Phật pháp liên tục và có OpenAI key, AI luân phiên các chủ đề cốt lõi và ứng dụng đời thường, nhớ tám lượt gần nhất để nối ý và tránh lặp. Bình luận trong hàng đợi được trả lời trước lượt giảng tiếp theo. Có thể chỉnh vai trò và giọng nói trong `LLM_SYSTEM_PROMPT`; biến `DEMO_SALES_MODE` giữ tên cũ để tương thích cấu hình.
+- Khi bật chia sẻ Phật pháp liên tục và có OpenAI key, AI xáo 18 chủ đề, kết hợp 12 tình huống đời thường thành 216 cặp không trùng trước khi dùng lại, đồng thời kiểm tra nội dung với 24 lượt gần nhất. Bình luận trong hàng đợi được trả lời trước lượt giảng tiếp theo. Có thể chỉnh vai trò và giọng nói trong `LLM_SYSTEM_PROMPT`; biến `DEMO_SALES_MODE` giữ tên cũ để tương thích cấu hình.
 - `STREAM_PREBUFFER_SEGMENTS=2`: giữ hai lượt đầy đủ để che dao động thời gian của ZeroTTS/MuseTalk; đổi lại lần nói đầu tiên bắt đầu chậm hơn.
 - `MUSETALK_BATCH_SIZE=20`: tăng đến khi GPU gần đầy. RTX 3090 24 GB thường đủ dư cho inference FP16.
 - `MUSETALK_XFORMERS=true`: dùng attention tối ưu; script bootstrap cài bản khớp PyTorch 2.0.1.

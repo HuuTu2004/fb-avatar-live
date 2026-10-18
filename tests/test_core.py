@@ -61,10 +61,9 @@ class CoreTests(unittest.TestCase):
         import asyncio
 
         llm = SalesDemoLLM()
-        first_script = asyncio.run(llm.reply([]))
-        second_script = asyncio.run(llm.reply([]))
-        self.assertTrue(first_script)
-        self.assertNotEqual(first_script, second_script)
+        spoken = [asyncio.run(llm.reply([])) for _ in range(len(llm.scripts) + 1)]
+        self.assertEqual(len(set(spoken[:-1])), len(llm.scripts))
+        self.assertNotEqual(spoken[-2], spoken[-1])
         self.assertTrue(any("Tứ diệu đế" in script for script in llm.scripts))
         self.assertTrue(any("Bát chánh đạo" in script for script in llm.scripts))
         self.assertFalse(any("nước giặt" in script for script in llm.scripts))
@@ -187,14 +186,48 @@ class CoreTests(unittest.TestCase):
         self.assertIn(first, second_prompt)
         self.assertEqual(client.requests[0]["reasoning_effort"], "none")
         self.assertEqual(client.requests[0]["max_completion_tokens"], 512)
-        self.assertNotEqual(first_prompt.split("Chủ đề lượt này: ")[1].split(". Có thể")[0],
-                            second_prompt.split("Chủ đề lượt này: ")[1].split(". Có thể")[0])
+        self.assertNotEqual(first_prompt.split("Chủ đề bắt buộc lượt này: ")[1].split(". Tình huống")[0],
+                            second_prompt.split("Chủ đề bắt buộc lượt này: ")[1].split(". Tình huống")[0])
 
         asyncio.run(llm.reply([Comment("dashboard-1", "Bạn", "Vô thường là gì?")]))
         viewer_prompt = client.requests[2]["messages"][1]["content"]
         self.assertIn("Vô thường là gì?", viewer_prompt)
         self.assertIn("Ưu tiên trả lời trực tiếp", viewer_prompt)
-        self.assertNotIn("Chủ đề lượt này", viewer_prompt)
+        self.assertNotIn("Chủ đề bắt buộc lượt này", viewer_prompt)
+
+    def test_dharma_topics_and_situations_do_not_repeat_until_exhausted(self) -> None:
+        import asyncio
+
+        class Client:
+            def __init__(self):
+                self.prompts = []
+
+            async def post(self, *args, **kwargs):
+                self.prompts.append(kwargs["json"]["messages"][1]["content"])
+                text = f"ý{len(self.prompts)}"
+                return SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"choices": [{"message": {"content": text}}]})
+
+        settings = SimpleNamespace(
+            comment_source="demo", demo_sales_mode=True, llm_base_url="https://example.test/v1",
+            llm_api_key="test", llm_model="gpt-6-luna", llm_system_prompt="Chia sẻ Phật pháp.",
+            llm_max_reply_chars=260,
+        )
+        client = Client()
+        llm = ExternalLLM(settings, client)
+
+        async def run():
+            for _ in range(len(llm.sales_angles) * len(llm.situations) + 1):
+                await llm.reply([])
+
+        asyncio.run(run())
+        pairs = [
+            (prompt.split("Chủ đề bắt buộc lượt này: ")[1].split(". Tình huống")[0],
+             prompt.split("Tình huống minh họa nếu phù hợp: ")[1].split(". Kiểu nói")[0])
+            for prompt in client.prompts
+        ]
+        self.assertEqual(len(set(pairs[:-1])), len(llm.sales_angles) * len(llm.situations))
+        self.assertNotEqual(pairs[-2], pairs[-1])
+        self.assertTrue(all(pairs[i][0] != pairs[i + 1][0] for i in range(len(pairs) - 1)))
 
     def test_dharma_reply_retries_near_duplicate(self) -> None:
         import asyncio
