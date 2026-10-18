@@ -72,6 +72,7 @@ class Settings:
     video_encoder: str
     video_bitrate: str
     idle_chunk_seconds: float
+    stream_prebuffer_segments: int
     data_dir: Path
     queue_size: int
     log_level: str
@@ -103,7 +104,7 @@ class Settings:
             zerotts_voice=os.getenv("ZEROTTS_VOICE", "maichi"),
             zerotts_threads=_integer("ZEROTTS_THREADS", 4),
             zerotts_warmup=_boolean("ZEROTTS_WARMUP", True),
-            speech_chunk_chars=_integer("SPEECH_CHUNK_CHARS", 45),
+            speech_chunk_chars=_integer("SPEECH_CHUNK_CHARS", 120),
             musetalk_url=os.getenv("MUSETALK_URL", "http://127.0.0.1:18081").rstrip("/"),
             stream_url=os.getenv("STREAM_URL", ""),
             avatar_video=Path(os.getenv("AVATAR_VIDEO", "assets/avatar.mp4")),
@@ -113,6 +114,7 @@ class Settings:
             video_encoder=os.getenv("VIDEO_ENCODER", "libx264"),
             video_bitrate=os.getenv("VIDEO_BITRATE", "4500k"),
             idle_chunk_seconds=_number("IDLE_CHUNK_SECONDS", 0.2),
+            stream_prebuffer_segments=_integer("STREAM_PREBUFFER_SEGMENTS", 2),
             data_dir=Path(os.getenv("DATA_DIR", "data")),
             queue_size=_integer("QUEUE_SIZE", 24),
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
@@ -147,7 +149,14 @@ class Settings:
                 missing.append(name)
         if missing:
             raise ValueError("Missing required settings: " + ", ".join(missing))
-        if min(self.output_width, self.output_height, self.output_fps, self.queue_size, self.speech_chunk_chars) <= 0:
+        if min(
+            self.output_width,
+            self.output_height,
+            self.output_fps,
+            self.queue_size,
+            self.speech_chunk_chars,
+            self.stream_prebuffer_segments,
+        ) <= 0:
             raise ValueError("Output dimensions, FPS, and QUEUE_SIZE must be positive")
         if not 1 <= self.fb_fetch_limit <= 100:
             raise ValueError("FB_FETCH_LIMIT must be between 1 and 100")

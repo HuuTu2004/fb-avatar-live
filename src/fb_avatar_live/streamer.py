@@ -146,17 +146,43 @@ class SegmentStreamer:
             self.pending_streams.pop(path, None)
         path.unlink(missing_ok=True)
 
+    def _next_segment(
+        self, source_queue: queue.Queue[Path], buffering: bool
+    ) -> tuple[Path | None, bool]:
+        if buffering and source_queue.qsize() < self.settings.stream_prebuffer_segments:
+            return None, True
+        try:
+            return source_queue.get_nowait(), False
+        except queue.Empty:
+            return None, True
+
     def _decode_video(self, path: Path, descriptor: int) -> None:
-        result = subprocess.run(
+        process = subprocess.Popen(
             [
                 "ffmpeg", "-loglevel", "error", "-i", str(path), "-map", "0:v:0",
                 "-vf", self._video_filter(), "-pix_fmt", "bgr24", "-f", "rawvideo",
-                f"pipe:{descriptor}",
+                "pipe:1",
             ],
-            pass_fds=(descriptor,),
+            stdout=subprocess.PIPE,
         )
-        if result.returncode and not self.stop_event.is_set():
+        frame_size = self.settings.output_width * self.settings.output_height * 3
+        last_frame = None
+        assert process.stdout is not None
+        while not self.stop_event.is_set():
+            frame = process.stdout.read(frame_size)
+            if not frame:
+                break
+            if len(frame) != frame_size:
+                process.kill()
+                raise RuntimeError(f"Incomplete video frame in segment: {path}")
+            self._write_all(descriptor, frame)
+            last_frame = frame
+        if self.stop_event.is_set():
+            process.terminate()
+        if process.wait() and not self.stop_event.is_set():
             raise RuntimeError(f"Could not decode video segment: {path}")
+        if last_frame is not None:
+            self.idle_video = last_frame
 
     def _decode_audio(self, path: Path, descriptor: int) -> None:
         result = subprocess.run(
@@ -172,11 +198,11 @@ class SegmentStreamer:
 
     def _feed_video(self, descriptor: int) -> None:
         idle_offset = 0
+        buffering = True
         idle_size = max(1, round(self.settings.output_fps * self.settings.idle_chunk_seconds)) * self.settings.output_width * self.settings.output_height * 3
         while not self.stop_event.is_set():
-            try:
-                path = self.video_queue.get_nowait()
-            except queue.Empty:
+            path, buffering = self._next_segment(self.video_queue, buffering)
+            if path is None:
                 idle_offset = self._write_looped(descriptor, self.idle_video, idle_offset, idle_size)
                 continue
             try:
@@ -187,11 +213,11 @@ class SegmentStreamer:
 
     def _feed_audio(self, descriptor: int) -> None:
         idle_offset = 0
+        buffering = True
         idle_size = max(1, round(48000 * self.settings.idle_chunk_seconds)) * 2 * 2
         while not self.stop_event.is_set():
-            try:
-                path = self.audio_queue.get_nowait()
-            except queue.Empty:
+            path, buffering = self._next_segment(self.audio_queue, buffering)
+            if path is None:
                 idle_offset = self._write_looped(descriptor, self.idle_audio, idle_offset, idle_size)
                 continue
             try:

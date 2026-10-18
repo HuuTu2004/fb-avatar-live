@@ -22,6 +22,7 @@ from transformers import WhisperModel
 ROOT = Path(os.getenv("ROOT", "/workspace/fb-avatar-live")).resolve()
 sys.path.insert(0, str(ROOT / "src"))
 from fb_avatar_live.config import load_env
+from fb_avatar_live.video import rotate_cycle, smooth_bboxes
 
 load_env(ROOT / ".env")
 
@@ -43,6 +44,7 @@ class MuseTalkRenderer:
         self.batch_size = int(os.getenv("MUSETALK_BATCH_SIZE", "20"))
         self.encoder = os.getenv("VIDEO_ENCODER", "libx264")
         self.bitrate = os.getenv("VIDEO_BITRATE", "4500k")
+        self.bbox_smooth_window = int(os.getenv("MUSETALK_BBOX_SMOOTH_WINDOW", "7"))
         self.lock = threading.Lock()
         self.frame_cursor = 0
         self.shared_dir.mkdir(parents=True, exist_ok=True)
@@ -88,9 +90,18 @@ class MuseTalkRenderer:
             right_cheek_width=int(os.getenv("MUSETALK_RIGHT_CHEEK", "90")),
         )
 
-        cache = self.root / "results" / "v15" / "avatars" / self.avatar_id / "latents.pt"
+        detect_bboxes = realtime.get_landmark_and_bbox
+
+        def detect_smoothed_bboxes(images, bbox_shift):
+            coords, frames = detect_bboxes(images, bbox_shift)
+            return smooth_bboxes(coords, self.bbox_smooth_window), frames
+
+        realtime.get_landmark_and_bbox = detect_smoothed_bboxes
+
+        model_avatar_id = f"{self.avatar_id}-smooth{self.bbox_smooth_window}v2"
+        cache = self.root / "results" / "v15" / "avatars" / model_avatar_id / "latents.pt"
         self.avatar = realtime.Avatar(
-            avatar_id=self.avatar_id,
+            avatar_id=model_avatar_id,
             video_path=str(self.avatar_video),
             bbox_shift=0,
             batch_size=self.batch_size,
@@ -125,7 +136,14 @@ class MuseTalkRenderer:
             return ["-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll", "-b:v", self.bitrate]
         return ["-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency", "-b:v", self.bitrate]
 
-    def _write_frames(self, frames: queue.Queue, count: int, temp_video: Path, errors: list[BaseException]) -> None:
+    def _write_frames(
+        self,
+        frames: queue.Queue,
+        count: int,
+        temp_video: Path,
+        errors: list[BaseException],
+        start_cursor: int,
+    ) -> None:
         first = self.avatar.frame_list_cycle[0]
         source_height, source_width = first.shape[:2]
         video_filter = (
@@ -140,9 +158,9 @@ class MuseTalkRenderer:
         process = subprocess.Popen(command, stdin=subprocess.PIPE)
         try:
             assert process.stdin is not None
-            for _ in range(count):
+            for frame_offset in range(count):
                 result = frames.get()
-                index = self.frame_cursor % len(self.avatar.frame_list_cycle)
+                index = (start_cursor + frame_offset) % len(self.avatar.frame_list_cycle)
                 bbox = self.avatar.coord_list_cycle[index]
                 original = self.avatar.frame_list_cycle[index].copy()
                 x1, y1, x2, y2 = bbox
@@ -155,7 +173,6 @@ class MuseTalkRenderer:
                     self.avatar.mask_coords_list_cycle[index],
                 )
                 process.stdin.write(np.ascontiguousarray(combined).tobytes())
-                self.frame_cursor += 1
             process.stdin.close()
             if process.wait() != 0:
                 raise RuntimeError("FFmpeg video encoder failed")
@@ -195,13 +212,15 @@ class MuseTalkRenderer:
             )
             frame_queue: queue.Queue = queue.Queue()
             errors: list[BaseException] = []
+            start_cursor = self.frame_cursor
             writer = threading.Thread(
                 target=self._write_frames,
-                args=(frame_queue, len(chunks), temp_video, errors),
+                args=(frame_queue, len(chunks), temp_video, errors, start_cursor),
                 daemon=True,
             )
             writer.start()
-            generator = rt.datagen(chunks, self.avatar.input_latent_list_cycle, self.batch_size)
+            latent_cycle = rotate_cycle(self.avatar.input_latent_list_cycle, start_cursor)
+            generator = rt.datagen(chunks, latent_cycle, self.batch_size)
             for whisper_batch, latent_batch in generator:
                 audio_features = rt.pe(whisper_batch.to(rt.device))
                 latent_batch = latent_batch.to(device=rt.device, dtype=rt.unet.model.dtype)
@@ -216,6 +235,7 @@ class MuseTalkRenderer:
             writer.join()
             if errors:
                 raise errors[0]
+            self.frame_cursor = (start_cursor + len(chunks)) % len(self.avatar.frame_list_cycle)
             subprocess.run(
                 [
                     "ffmpeg", "-y", "-loglevel", "error", "-i", str(temp_video), "-i", str(audio_path),
