@@ -71,6 +71,8 @@ TIKTOK_STREAM_URL=rtmp://...private-stream-key...
 
 Để xem WebRTC trước khi live thật, chọn **Chỉ preview · dùng câu thử**, để trống cả hai stream URL, bấm **Bắt đầu preview / live**, rồi gửi câu kiểm tra trên Dashboard. Đích Facebook/TikTok là tùy chọn; forwarder chỉ chờ khi chưa có URL nên không phát ra ngoài.
 
+Để kiểm tra avatar nói liên tục, bật **Demo bán nước giặt nói liên tục** trong mục Avatar & Live. Khi chưa có OpenAI key, pipeline dùng vòng kịch bản nội bộ; sau khi lưu OpenAI key và model, cùng chế độ này sẽ dùng OpenAI để tạo lời dẫn từ các gợi ý bán hàng tự động.
+
 Không commit `.env`; token Facebook, API key LLM và stream key đều là bí mật.
 
 Các service được Supervisor quản lý:

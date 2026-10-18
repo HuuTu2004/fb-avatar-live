@@ -4,7 +4,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from fb_avatar_live.core import CombinedCommentSource, Comment, CommentStore, split_utterances
+from fb_avatar_live.core import (
+    CombinedCommentSource,
+    Comment,
+    CommentStore,
+    ContinuousSalesCommentSource,
+    SalesDemoLLM,
+    split_utterances,
+)
 
 
 class CoreTests(unittest.TestCase):
@@ -38,6 +45,20 @@ class CoreTests(unittest.TestCase):
 
         source = CombinedCommentSource(Source(Comment("facebook:1", "An", "A")), Source(Comment("tiktok:2", "Bình", "B")))
         self.assertEqual([item.id for item in asyncio.run(source.fetch())], ["facebook:1", "tiktok:2"])
+
+    def test_sales_demo_keeps_producing_unique_content(self) -> None:
+        import asyncio
+
+        source = ContinuousSalesCommentSource()
+        first_comment = asyncio.run(source.fetch())[0]
+        second_comment = asyncio.run(source.fetch())[0]
+        self.assertNotEqual(first_comment.id, second_comment.id)
+
+        llm = SalesDemoLLM()
+        first_script = asyncio.run(llm.reply([first_comment]))
+        second_script = asyncio.run(llm.reply([second_comment]))
+        self.assertTrue(first_script)
+        self.assertNotEqual(first_script, second_script)
 
 
 if __name__ == "__main__":

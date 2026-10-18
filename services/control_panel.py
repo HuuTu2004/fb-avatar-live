@@ -55,6 +55,7 @@ class LivePayload(BaseModel):
     tiktok_stream_url: str = ""
     poll_seconds: float = Field(default=2, ge=0.5, le=30)
     batch_seconds: float = Field(default=2, ge=0.5, le=30)
+    demo_sales_mode: bool = False
 
 
 class TestPayload(BaseModel):
@@ -204,6 +205,7 @@ async def status() -> dict:
         "avatar": values.get("AVATAR_VIDEO", ""),
         "fb_object_id": values.get("FB_OBJECT_ID", ""),
         "comment_source": values.get("COMMENT_SOURCE", "facebook"),
+        "demo_sales_mode": values.get("DEMO_SALES_MODE", "false").lower() in {"1", "true", "yes", "on"},
         "tiktok_unique_id": values.get("TIKTOK_UNIQUE_ID", ""),
         "has_fb_token": bool(values.get("FB_PAGE_ACCESS_TOKEN")),
         "has_fb_stream_url": bool(values.get("FACEBOOK_STREAM_URL")),
@@ -443,6 +445,7 @@ async def save_live(payload: LivePayload) -> dict:
             "TIKTOK_STREAM_URL": tiktok_stream,
             "FB_POLL_SECONDS": str(payload.poll_seconds),
             "FB_BATCH_SECONDS": str(payload.batch_seconds),
+            "DEMO_SALES_MODE": str(payload.demo_sales_mode).lower(),
             "STREAM_URL": "rtsp://127.0.0.1:8554/avatar",
         }
     )
@@ -455,8 +458,10 @@ async def save_live(payload: LivePayload) -> dict:
 def _start_live() -> None:
     values = env_file.read()
     configured = _configured(values)
-    missing = [name for name in ("openai", "voice", "avatar") if not configured[name]]
     source = values.get("COMMENT_SOURCE", "facebook")
+    demo_sales = source == "demo" and values.get("DEMO_SALES_MODE", "false").lower() in {"1", "true", "yes", "on"}
+    required = ("voice", "avatar") if demo_sales else ("openai", "voice", "avatar")
+    missing = [name for name in required if not configured[name]]
     if source in {"facebook", "both"} and not configured["facebook"]:
         missing.append("facebook comments")
     if source in {"tiktok", "both"} and not configured["tiktok"]:

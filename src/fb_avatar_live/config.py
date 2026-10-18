@@ -76,6 +76,7 @@ class Settings:
     queue_size: int
     log_level: str
     demo_comments_file: Path
+    demo_sales_mode: bool
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -116,6 +117,7 @@ class Settings:
             queue_size=_integer("QUEUE_SIZE", 24),
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
             demo_comments_file=Path(os.getenv("DEMO_COMMENTS_FILE", "data/demo_comments.jsonl")),
+            demo_sales_mode=_boolean("DEMO_SALES_MODE", False),
         )
         settings.validate()
         return settings
@@ -131,12 +133,16 @@ class Settings:
             missing.append("TIKTOK_UNIQUE_ID")
         if self.comment_source not in {"facebook", "tiktok", "both", "demo"}:
             raise ValueError("COMMENT_SOURCE must be facebook, tiktok, both, or demo")
-        for name, value in (
-            ("LLM_BASE_URL", self.llm_base_url),
-            ("LLM_API_KEY", self.llm_api_key),
-            ("LLM_MODEL", self.llm_model),
-            ("STREAM_URL", self.stream_url),
-        ):
+        required = [("STREAM_URL", self.stream_url)]
+        if not (self.comment_source == "demo" and self.demo_sales_mode):
+            required.extend(
+                (
+                    ("LLM_BASE_URL", self.llm_base_url),
+                    ("LLM_API_KEY", self.llm_api_key),
+                    ("LLM_MODEL", self.llm_model),
+                )
+            )
+        for name, value in required:
             if not value:
                 missing.append(name)
         if missing:

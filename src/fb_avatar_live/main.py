@@ -8,11 +8,13 @@ import httpx
 from .config import Settings
 from .core import (
     CombinedCommentSource,
+    ContinuousSalesCommentSource,
     DemoCommentSource,
     ExternalLLM,
     FacebookCommentSource,
     MuseTalkClient,
     Pipeline,
+    SalesDemoLLM,
     TikTokCommentSource,
     ZeroTTSEngine,
 )
@@ -34,12 +36,19 @@ async def async_main() -> None:
             source = TikTokCommentSource(settings)
         elif settings.comment_source == "both":
             source = CombinedCommentSource(FacebookCommentSource(settings, client), TikTokCommentSource(settings))
+        elif settings.demo_sales_mode:
+            source = ContinuousSalesCommentSource()
         else:
             source = DemoCommentSource(settings.demo_comments_file)
+        llm = (
+            ExternalLLM(settings, client)
+            if settings.llm_api_key and settings.llm_model
+            else SalesDemoLLM()
+        )
         pipeline = Pipeline(
             settings=settings,
             source=source,
-            llm=ExternalLLM(settings, client),
+            llm=llm,
             tts=ZeroTTSEngine(settings),
             renderer=MuseTalkClient(settings, client),
             streamer=SegmentStreamer(settings),

@@ -231,6 +231,32 @@ class DemoCommentSource:
         return comments
 
 
+class ContinuousSalesCommentSource:
+    async def fetch(self) -> list[Comment]:
+        return [Comment(f"sales-demo-{uuid.uuid4().hex}", "Khách xem", "Hãy tiếp tục giới thiệu sản phẩm")]
+
+
+class SalesDemoLLM:
+    scripts = (
+        "Chào cả nhà, hôm nay mình giới thiệu dòng nước giặt giúp làm sạch quần áo hằng ngày, hương thơm dễ chịu và dùng được cho cả giặt tay lẫn giặt máy.",
+        "Điểm mình thích là chất giặt hòa tan nhanh, len vào từng sợi vải và hỗ trợ xử lý những vết bẩn thường gặp mà không cần chà quá lâu.",
+        "Khi dùng, cả nhà chỉ cần lấy lượng vừa đủ theo số quần áo. Với đồ bẩn nhiều, mình có thể ngâm ngắn trước khi giặt để đạt hiệu quả tốt hơn.",
+        "Mùi hương lưu nhẹ trên quần áo, phù hợp để mặc hằng ngày. Sau khi phơi khô, đồ vẫn sạch thoáng và không tạo cảm giác hương quá nồng.",
+        "Sản phẩm phù hợp cho gia đình bận rộn vì cách dùng rất đơn giản. Một chai có thể dùng đều cho quần áo đi làm, đồ ở nhà và đồ của cả gia đình.",
+        "Cả nhà đang xem có thể để lại câu hỏi về cách dùng, loại máy giặt hoặc tình trạng vết bẩn. Mình sẽ giải đáp lần lượt ngay trên buổi phát này.",
+        "Nếu đang tìm một lựa chọn tiện cho việc giặt giũ mỗi ngày, cả nhà có thể tham khảo sản phẩm này và chọn dung tích phù hợp với nhu cầu gia đình.",
+        "Mình nhắc lại cách dùng nhé: phân loại quần áo, cho lượng nước giặt vừa đủ, chọn chương trình phù hợp rồi phơi ở nơi thông thoáng để quần áo luôn sạch thơm.",
+    )
+
+    def __init__(self):
+        self.index = 0
+
+    async def reply(self, comments: list[Comment]) -> str:
+        text = self.scripts[self.index % len(self.scripts)]
+        self.index += 1
+        return text
+
+
 class ExternalLLM:
     def __init__(self, settings: Settings, client: httpx.AsyncClient):
         self.settings = settings
@@ -243,8 +269,7 @@ class ExternalLLM:
             headers={"Authorization": f"Bearer {self.settings.llm_api_key}"},
             json={
                 "model": self.settings.llm_model,
-                "temperature": 0.6,
-                "max_tokens": 220,
+                "max_completion_tokens": 220,
                 "messages": [
                     {"role": "system", "content": self.settings.llm_system_prompt},
                     {

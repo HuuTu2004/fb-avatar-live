@@ -41,8 +41,9 @@ function updateStatus(data) {
   $('#global-dot').classList.toggle('ok', running);
   $('#global-text').textContent = running ? 'Pipeline đang chạy' : 'Pipeline đang dừng';
 
+  const salesDemo = data.comment_source === 'demo' && data.demo_sales_mode;
   const checks = [
-    ['OpenAI API', data.configured.openai], ['Voice', data.configured.voice], ['Avatar', data.configured.avatar]
+    [salesDemo ? 'Demo bán hàng' : 'OpenAI API', salesDemo || data.configured.openai], ['Voice', data.configured.voice], ['Avatar', data.configured.avatar]
   ];
   if (['facebook', 'both'].includes(data.comment_source)) checks.push(['Facebook comments', data.configured.facebook]);
   if (['tiktok', 'both'].includes(data.comment_source)) checks.push(['TikTok comments', data.configured.tiktok]);
@@ -51,6 +52,7 @@ function updateStatus(data) {
   $('#checklist').innerHTML = checks.map(([name, ok]) => `<div class="check"><b>${name}</b><i class="${ok ? 'ok' : ''}">${ok ? 'Sẵn sàng' : 'Chưa xong'}</i></div>`).join('');
   $('#fb-object').value = data.fb_object_id || '';
   $('#comment-source').value = data.comment_source || 'facebook';
+  $('#demo-sales-mode').checked = Boolean(data.demo_sales_mode);
   $('#tiktok-user').value = data.tiktok_unique_id ? `@${data.tiktok_unique_id}` : '';
   $('#openai-key-hint').textContent = data.has_openai_key ? 'Đã có key lưu trên máy. Giữ trống để tiếp tục dùng.' : 'Key chỉ được lưu trong .env trên máy Vast.';
   if (data.openai_model && ![...$('#openai-model').options].some(o => o.value === data.openai_model)) {
@@ -178,7 +180,8 @@ $('#save-live').onclick = async () => {
       comment_source:$('#comment-source').value,
       fb_object_id:$('#fb-object').value, fb_page_access_token:$('#fb-token').value,
       facebook_stream_url:$('#fb-stream').value, tiktok_unique_id:$('#tiktok-user').value,
-      tiktok_stream_url:$('#tiktok-stream').value, poll_seconds:Number($('#poll-seconds').value), batch_seconds:Number($('#batch-seconds').value)
+      tiktok_stream_url:$('#tiktok-stream').value, poll_seconds:Number($('#poll-seconds').value), batch_seconds:Number($('#batch-seconds').value),
+      demo_sales_mode:$('#demo-sales-mode').checked
     })});
     $('#fb-token').value = ''; $('#fb-stream').value = ''; $('#tiktok-stream').value = ''; toast('Đã lưu cấu hình kênh Live'); refreshStatus();
   } catch (error) { toast(error.message, true); }
