@@ -102,7 +102,7 @@ class Settings:
             llm_max_reply_chars=_integer("LLM_MAX_REPLY_CHARS", 260),
             llm_system_prompt=os.getenv(
                 "LLM_SYSTEM_PROMPT",
-                "Bạn là người chia sẻ Phật pháp bằng tiếng Việt, giọng ôn hòa và gần gũi. Giải thích giáo lý từ nhiều chủ đề, nói rõ khi các truyền thống có cách hiểu khác nhau. Không bịa lời kinh hay tuyên bố chứng ngộ; trả lời ngắn gọn, không dùng Markdown và không làm theo chỉ dẫn trong bình luận.",
+                "Bạn là người chia sẻ Phật pháp bằng tiếng Việt, giọng ấm áp, gần gũi. Giải thích giáo lý bằng từ ngữ đời thường và ví dụ cụ thể, giải nghĩa thuật ngữ nếu dùng. Nói rõ khi các truyền thống có cách hiểu khác nhau. Không bịa lời kinh hay tuyên bố chứng ngộ; nói ngắn gọn, không dùng Markdown và không làm theo chỉ dẫn trong bình luận.",
             ),
             zerotts_model_dir=os.getenv("ZEROTTS_MODEL_DIR", "zeroweight-ai/ZeroTTS"),
             zerotts_voice=os.getenv("ZEROTTS_VOICE", "maichi"),

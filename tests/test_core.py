@@ -104,9 +104,9 @@ class CoreTests(unittest.TestCase):
             def __init__(self):
                 self.calls = []
 
-            async def reply(self, comments):
-                self.calls.append(comments)
-                return "Một câu ngắn để phát."
+            async def reply(self, comments, followup_index=0, previous_parts=()):
+                self.calls.append((comments, followup_index, previous_parts))
+                return f"Phần {followup_index + 1} để phát."
 
         async def check() -> None:
             with tempfile.TemporaryDirectory() as directory:
@@ -114,6 +114,7 @@ class CoreTests(unittest.TestCase):
                 pipeline.settings = SimpleNamespace(
                     fb_batch_seconds=0.01, comment_source="facebook", demo_sales_mode=True,
                     fb_batch_size=8, stream_prebuffer_segments=2, queue_size=8, speech_chunk_chars=100,
+                    llm_api_key="test",
                 )
                 pipeline.store = CommentStore(Path(directory) / "state.sqlite3")
                 pipeline.text_queue = asyncio.Queue()
@@ -138,17 +139,23 @@ class CoreTests(unittest.TestCase):
 
                     await wait_for_calls(3)
                     self.assertEqual(len(pipeline.llm.calls), 3)
-                    self.assertTrue(all(not call for call in pipeline.llm.calls))
+                    self.assertTrue(all(not call[0] for call in pipeline.llm.calls))
                     pipeline.store.add([
                         Comment("dashboard-1", "Bạn", "Bao tiền vậy?"),
                         Comment("dashboard-2", "Bạn", "Giặt tay dùng thế nào?"),
                     ])
-                    await wait_for_calls(5)
-                    self.assertEqual(pipeline.llm.calls[3][0].message, "Bao tiền vậy?")
-                    self.assertEqual(pipeline.llm.calls[4][0].message, "Giặt tay dùng thế nào?")
-                    self.assertEqual(pipeline.text_queue.qsize(), 2)
-                    self.assertFalse(pipeline.text_queue.get_nowait().is_sales)
-                    self.assertFalse(pipeline.text_queue.get_nowait().is_sales)
+                    for _ in range(100):
+                        viewer_calls = [call for call in pipeline.llm.calls if call[0]]
+                        if len(viewer_calls) >= 6:
+                            break
+                        await asyncio.sleep(0.01)
+                    self.assertEqual(len(viewer_calls), 6)
+                    self.assertEqual([call[0][0].message for call in viewer_calls],
+                                     ["Bao tiền vậy?"] * 3 + ["Giặt tay dùng thế nào?"] * 3)
+                    self.assertEqual([call[1] for call in viewer_calls], [0, 1, 2, 0, 1, 2])
+                    self.assertEqual(viewer_calls[2][2], ("Phần 1 để phát.", "Phần 2 để phát."))
+                    self.assertEqual(pipeline.text_queue.qsize(), 6)
+                    self.assertTrue(all(not pipeline.text_queue.get_nowait().is_sales for _ in range(6)))
                     self.assertEqual(dropped_sales, [])
                 finally:
                     task.cancel()
@@ -158,7 +165,7 @@ class CoreTests(unittest.TestCase):
 
         asyncio.run(check())
 
-    def test_dharma_prompt_rotates_topics_and_answers_comment(self) -> None:
+    def test_dharma_prompt_rotates_topics_and_explains_comment_over_three_calls(self) -> None:
         import asyncio
 
         class Client:
@@ -203,10 +210,17 @@ class CoreTests(unittest.TestCase):
         self.assertNotEqual(first_prompt.split("Chủ đề bắt buộc lượt này: ")[1].split(". Tình huống")[0],
                             second_prompt.split("Chủ đề bắt buộc lượt này: ")[1].split(". Tình huống")[0])
 
-        asyncio.run(llm.reply([Comment("dashboard-1", "Bạn", "Vô thường là gì?")]))
+        comment = [Comment("dashboard-1", "Bạn", "Vô thường là gì?")]
+        first_part = asyncio.run(llm.reply(comment))
+        asyncio.run(llm.reply(comment, 1, (first_part,)))
+        asyncio.run(llm.reply(comment, 2, (first_part, "Một ví dụ gần gũi.")))
         viewer_prompt = client.requests[2]["messages"][1]["content"]
         self.assertIn("Vô thường là gì?", viewer_prompt)
-        self.assertIn("Ưu tiên trả lời trực tiếp", viewer_prompt)
+        self.assertIn("lượt 1 trong 3 lượt", viewer_prompt)
+        self.assertIn("Giải đáp thẳng", viewer_prompt)
+        self.assertIn("ví dụ đời thường", client.requests[3]["messages"][1]["content"])
+        self.assertIn("cách thực hành nhỏ", client.requests[4]["messages"][1]["content"])
+        self.assertIn(first_part, client.requests[3]["messages"][1]["content"])
         self.assertNotIn("Chủ đề bắt buộc lượt này", viewer_prompt)
 
     def test_dharma_topics_and_situations_do_not_repeat_until_exhausted(self) -> None:
