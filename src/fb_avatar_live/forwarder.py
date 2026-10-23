@@ -23,12 +23,10 @@ def _write_health(channel: str, state: str, exit_code: int | None = None) -> Non
 
 
 def _destinations(channel: str) -> list[tuple[str, str]]:
-    streams = {
-        "facebook": ("Facebook", os.getenv("FACEBOOK_STREAM_URL", "").strip()),
-        "tiktok": ("TikTok", os.getenv("TIKTOK_STREAM_URL", "").strip()),
-    }
-    name, url = streams[channel]
-    return [(name, url)] if url else []
+    if channel != "facebook":
+        raise ValueError(f"Unsupported stream destination: {channel}")
+    url = os.getenv("FACEBOOK_STREAM_URL", "").strip()
+    return [("Facebook", url)] if url else []
 
 
 def run(channel: str = "facebook") -> None:
@@ -39,7 +37,7 @@ def run(channel: str = "facebook") -> None:
         destinations = _destinations(channel)
         source = os.getenv("STREAM_URL", "rtsp://127.0.0.1:8554/avatar").strip()
         if not destinations:
-            log.info("No Facebook or TikTok stream destination; waiting")
+            log.info("No Facebook stream destination; waiting")
             _write_health(channel, "unconfigured")
             time.sleep(5)
             continue

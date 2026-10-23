@@ -129,13 +129,11 @@
             <div class="channel-panel" id="tiktok-settings" hidden>
               <h3>TikTok</h3>
               <div class="field"><label for="tiktok-user">TikTok LIVE @username · nguồn bình luận</label><input id="tiktok-user" autocomplete="off" placeholder="@ten_tai_khoan"><small>Chỉ cần nhập @username của live công khai để đọc bình luận; không cần RTMP key.</small></div>
-              <div class="field"><label for="tiktok-stream">TikTok RTMP URL + stream key</label><input id="tiktok-stream" type="password" autocomplete="off" placeholder="rtmp://push-rtmp-…/live/…"></div>
-              <div class="result">Bình luận TikTok dùng kết nối Webcast; RTMP/stream key lấy trong TikTok LIVE Center.</div>
-              <div class="button-stack"><button class="primary" id="start-tiktok">Bắt đầu gửi TikTok</button><button class="danger" id="stop-tiktok">Dừng gửi TikTok</button></div>
+              <div class="result">Bình luận được đọc qua kết nối Webcast. Hình và tiếng phát qua TikTok LIVE Studio trên Windows.</div>
             </div>
             <div class="two-col"><div class="field"><label>Quét comment</label><div class="suffix"><input id="poll-seconds" type="number" min="0.5" max="30" step="0.5" value="2"><span>giây</span></div></div><div class="field"><label>Gom batch</label><div class="suffix"><input id="batch-seconds" type="number" min="0.5" max="30" step="0.5" value="2"><span>giây</span></div></div></div>
             <button class="primary full" id="save-live">Lưu cấu hình Live</button>
-            <small id="live-save-hint" hidden>Có thể đổi nguồn bình luận khi đang phát; dừng kênh trước khi đổi URL hoặc khóa luồng của kênh đó. Lưu nguồn bình luận sẽ khởi động lại pipeline trong chốc lát.</small>
+            <small id="live-save-hint" hidden>Có thể đổi nguồn bình luận khi đang phát mà không ngắt preview. Dừng gửi Facebook trước khi đổi URL hoặc khóa luồng Facebook.</small>
           </article>
         </div>
       </section>

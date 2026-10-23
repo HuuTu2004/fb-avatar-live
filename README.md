@@ -10,7 +10,7 @@ TikTok LIVE Webcast ─┴─> SQLite dedupe/batch -> hosted LLM
                        -> FFmpeg H.264/Opus -> MediaMTX
                           ├─ WebRTC/WHEP preview in control panel
                           ├─ H.264/AAC -> Facebook RTMPS
-                          └─ H.264/AAC -> TikTok RTMP
+                          └─ H.264/AAC -> TikTok LIVE Studio trên Windows (camera + micro ảo)
 ```
 
 MuseTalk và ZeroTTS chạy ở hai môi trường Python riêng. MuseTalk giữ model trong VRAM và nhận từng đoạn audio qua HTTP nội bộ; ZeroTTS, LLM và bộ điều phối chạy trong tiến trình còn lại. FFmpeg luôn phát một idle clip ngắn khi chưa có câu trả lời. MediaMTX cấp preview WebRTC độ trễ thấp và forwarder đổi Opus sang AAC để gửi cùng video H.264 lên Facebook.
@@ -28,7 +28,7 @@ Control panel có bốn khu vực hoạt động trực tiếp với backend:
 - Video avatar có mặt nhìn rõ. Đầu/cuối khớp nhau sẽ chuyển cảnh mượt nhất.
 - Facebook Page access token có quyền đọc comment của live video/post mà bạn quản lý. `FB_OBJECT_ID` là ID của live video hoặc post.
 - RTMPS ingest URL lấy từ Facebook Live Producer.
-- TikTok `@username` đang LIVE để đọc chat và RTMP URL + stream key lấy từ TikTok LIVE Center.
+- TikTok `@username` đang LIVE để đọc chat; hình và tiếng đưa vào TikTok LIVE Studio qua camera và micro ảo trên Windows.
 - OpenAI API key. Backend dùng endpoint `https://api.openai.com/v1`.
 
 Ứng dụng chỉ đọc bình luận và nói trên livestream; nó không đăng câu trả lời trở lại Facebook hoặc TikTok.
@@ -38,6 +38,8 @@ TikTok hiện không có API công khai chính thức để đọc comment LIVE.
 ## Cài trên Vast.ai
 
 Hướng dẫn dựng lại đúng cấu hình preview đang chạy: [VAST_SETUP.md](VAST_SETUP.md).
+
+Đưa hình/tiếng Vast vào TikTok LIVE Studio như camera và micro ảo trên Windows: [LIVE_STUDIO_CAMERA.md](LIVE_STUDIO_CAMERA.md).
 
 Repo nên nằm tại `/workspace/fb-avatar-live`:
 
@@ -68,7 +70,6 @@ LLM_API_KEY=...
 LLM_MODEL=...
 STREAM_URL=rtsp://127.0.0.1:8554/avatar
 FACEBOOK_STREAM_URL=rtmps://...private-stream-key...
-TIKTOK_STREAM_URL=rtmp://...private-stream-key...
 ```
 
 Để xem WebRTC trước khi live thật, chọn **Facebook cá nhân · bình luận thử trên web**, bấm **Bắt đầu preview**, rồi gửi câu kiểm tra trên Dashboard. Nút này chỉ chạy preview, không gửi tín hiệu ra Facebook/TikTok.
@@ -86,7 +87,7 @@ Các service được Supervisor quản lý:
 ```bash
 supervisorctl status \
   fb-avatar-control fb-avatar-mediamtx fb-avatar-musetalk \
-  fb-avatar-pipeline fb-avatar-forwarder fb-avatar-tiktok-forwarder
+  fb-avatar-pipeline fb-avatar-forwarder
 ```
 
 Control panel được bảo vệ bởi lớp token của Vast/Caddy. MediaMTX chỉ bind HTTP/RTSP vào localhost; WebRTC dùng STUN để thiết lập media path. Mạng chặn UDP hoặc symmetric NAT nên cấu hình thêm TURN trong `config/mediamtx.yml`.

@@ -97,7 +97,7 @@ STREAM_PREBUFFER_SEGMENTS=2
 STREAM_URL=rtsp://127.0.0.1:8554/avatar
 ```
 
-`DEMO_SALES_MODE` là tên biến cũ trong code; ở giao diện hiện nay nó bật chế độ **chia sẻ Phật pháp liên tục**. Prompt Phật pháp nằm sẵn trong `.env.example`. Nhập `LLM_API_KEY` riêng vào `.env` hoặc giao diện **OpenAI API**; chọn model thực sự có trên tài khoản nếu `gpt-6-luna` không còn khả dụng. Để trống `FACEBOOK_STREAM_URL`, `TIKTOK_STREAM_URL` và Page token khi chỉ preview. Khóa luồng đã từng nhập ở instance hiện tại; không sao chép nó vào repo hay hướng dẫn.
+`DEMO_SALES_MODE` là tên biến cũ trong code; ở giao diện hiện nay nó bật chế độ **chia sẻ Phật pháp liên tục**. Prompt Phật pháp nằm sẵn trong `.env.example`. Nhập `LLM_API_KEY` riêng vào `.env` hoặc giao diện **OpenAI API**; chọn model thực sự có trên tài khoản nếu `gpt-6-luna` không còn khả dụng. Để trống `FACEBOOK_STREAM_URL` và Page token khi chỉ preview. Khóa luồng đã từng nhập ở instance hiện tại; không sao chép nó vào repo hay hướng dẫn.
 
 Avatar trong repo là bản đã chuẩn hóa **8 giây, 1280×720, 25 FPS, không có tiếng**. Khuôn mặt đủ lớn để MuseTalk ghép miệng; `AVATAR_IDLE_FRAME_SECONDS=5` giữ một frame khi chờ thoại để tránh miệng video gốc tự động cử động. Nhạc nền được trộn ở mức 10% độc lập với từng câu, nên vẫn chạy qua lúc AI chuẩn bị câu tiếp theo. Nếu đổi avatar, cần hiệu chỉnh lại frame chờ và cho MuseTalk tạo lại cache; không thể kỳ vọng cùng độ khớp môi chỉ bằng thay đường dẫn file.
 
@@ -106,10 +106,10 @@ Avatar trong repo là bản đã chuẩn hóa **8 giây, 1280×720, 25 FPS, khô
 ```bash
 cd /workspace/fb-avatar-live
 ./scripts/install_supervisor.sh
-supervisorctl status fb-avatar-control fb-avatar-mediamtx fb-avatar-musetalk fb-avatar-pipeline fb-avatar-forwarder fb-avatar-tiktok-forwarder
+supervisorctl status fb-avatar-control fb-avatar-mediamtx fb-avatar-musetalk fb-avatar-pipeline fb-avatar-forwarder
 ```
 
-Script cài bốn service preview tự chạy; **forwarder Facebook và TikTok mặc định không tự chạy**. Trong web, nút **Bắt đầu preview** không phát ra ngoài. Khi muốn live Facebook cá nhân, nhập URL máy chủ và khóa luồng trong mục Avatar & Live, lưu, chờ preview rồi bấm **Bắt đầu gửi lên Facebook**; kiểm tra và bấm **Phát trực tiếp** trong Facebook Live Producer. Trên instance hiện tại, Supervisor của cả hai forwarder cũng đặt `autostart=false`.
+Script cài bốn service preview tự chạy; **forwarder Facebook mặc định không tự chạy**. Trong web, nút **Bắt đầu preview** không phát ra ngoài. Khi muốn live Facebook cá nhân, nhập URL máy chủ và khóa luồng trong mục Avatar & Live, lưu, chờ preview rồi bấm **Bắt đầu gửi lên Facebook**; kiểm tra và bấm **Phát trực tiếp** trong Facebook Live Producer. Trên instance hiện tại, Supervisor của forwarder Facebook đặt `autostart=false`.
 
 Đọc bình luận live trên **trang cá nhân** dùng [Social Stream Ninja](https://github.com/steveseguin/social_stream) ở Chrome của người phát. Mở video như người xem, bật capture Facebook, bật hai tùy chọn **Enable remote API control of extension** và **Send chat messages to API server**, rồi lấy Session ID trong URL dock. Trên web chọn **Facebook cá nhân · Social Stream Ninja**, dán Session ID và lưu. `COMMENT_SOURCE=facebook_personal` và `SSN_SESSION_ID` sẽ được lưu trong `.env`; cần OpenAI key để trả lời. Relay `io.socialstream.ninja` phải truy cập được từ Vast. Giữ tab Facebook mở; nếu SSN không thu được comment thì pipeline vẫn nói nội dung nền khi bật chia sẻ liên tục. Dừng kênh gửi Facebook trước khi đổi cấu hình Live để pipeline khởi động lại an toàn.
 
@@ -125,7 +125,7 @@ Truy cập `http://localhost:8088`, nhập API key trong **OpenAI API** và xem 
 ## 5. Kiểm tra và xử lý nhanh
 
 ```bash
-supervisorctl status fb-avatar-control fb-avatar-mediamtx fb-avatar-musetalk fb-avatar-pipeline fb-avatar-forwarder fb-avatar-tiktok-forwarder
+supervisorctl status fb-avatar-control fb-avatar-mediamtx fb-avatar-musetalk fb-avatar-pipeline fb-avatar-forwarder
 curl -fsS http://127.0.0.1:18081/health
 curl -I http://127.0.0.1:18080/
 ffprobe -v error -rtsp_transport tcp -show_entries stream=codec_name,width,height,r_frame_rate,sample_rate -of compact=p=0 rtsp://127.0.0.1:8554/avatar
@@ -136,3 +136,5 @@ PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -q
 Kỳ vọng pipeline/MuseTalk/MediaMTX/control đều `RUNNING`, forwarder `STOPPED`, RTSP có H.264 720p/25 FPS và Opus 48 kHz. Sau lần khởi động đầu, chờ MuseTalk chuẩn bị avatar/cache rồi mới đánh giá preview. Xem lỗi bằng `tail -n 100 /var/log/portal/fb-avatar-pipeline.log` hoặc `.../fb-avatar-musetalk.log`; khi chỉnh `.env`, restart service liên quan bằng `supervisorctl restart fb-avatar-pipeline` hoặc `fb-avatar-musetalk`.
 
 Nếu preview có tiếng nhưng WebRTC không hiện hình, kiểm tra cả hai cổng SSH tunnel `8088` và `8189`. Nếu câu nói bị đứt, kiểm tra tốc độ render trong log: với máy này MuseTalk đã đo khoảng 40 FPS sau warm-up cho một avatar, cao hơn nhịp phát 25 FPS; GPU khác, mạng khác, avatar khác hoặc LLM/TTS chậm hơn có thể làm hàng đợi hết. Giữ `STREAM_PREBUFFER_SEGMENTS=2` trước khi giảm thời gian đệm.
+
+Để dùng TikTok LIVE Studio qua nguồn **Camera** và **micro** trên Windows, xem [LIVE_STUDIO_CAMERA.md](LIVE_STUDIO_CAMERA.md). MediaMTX mở RTMP tại `127.0.0.1:1935` chỉ để SSH tunnel đọc; path `avatar_studio` đổi Opus sang AAC theo yêu cầu để giữ một luồng hình/tiếng đồng bộ.

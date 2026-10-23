@@ -34,7 +34,7 @@ VOICE_HOME = ROOT / "data" / "voices"
 PREVIEW_DIR = ROOT / "data" / "previews"
 OPENAI_BASE_URL = "https://api.openai.com/v1"
 BUILTIN_VOICES = ["maichi", "baotrang", "kimoanh", "hamy", "giahuy", "huuduc", "quangminh", "tiendat"]
-SERVICES = ["fb-avatar-mediamtx", "fb-avatar-musetalk", "fb-avatar-pipeline", "fb-avatar-forwarder", "fb-avatar-tiktok-forwarder"]
+SERVICES = ["fb-avatar-mediamtx", "fb-avatar-musetalk", "fb-avatar-pipeline", "fb-avatar-forwarder"]
 FACEBOOK_SERVER_URL = "rtmps://live-api-s.facebook.com:443/rtmp/"
 FORWARDER_HEALTH_DIR = Path("/tmp")
 
@@ -61,7 +61,6 @@ class LivePayload(BaseModel):
     facebook_stream_key: str = ""
     facebook_stream_url: str = ""
     tiktok_unique_id: str = ""
-    tiktok_stream_url: str = ""
     poll_seconds: float = Field(default=2, ge=0.5, le=30)
     batch_seconds: float = Field(default=2, ge=0.5, le=30)
     demo_sales_mode: bool = False
@@ -206,7 +205,6 @@ def _configured(values: dict[str, str]) -> dict[str, bool]:
         "facebook_personal": bool(values.get("SSN_SESSION_ID")),
         "facebook_stream": bool(values.get("FACEBOOK_STREAM_URL")),
         "tiktok": bool(values.get("TIKTOK_UNIQUE_ID")),
-        "tiktok_stream": bool(values.get("TIKTOK_STREAM_URL")),
     }
 
 
@@ -241,7 +239,6 @@ async def status() -> dict:
         "services": services,
         "forwarder_health": {
             "facebook": _forwarder_health("facebook", services["forwarder"]),
-            "tiktok": _forwarder_health("tiktok", services["tiktok-forwarder"]),
         },
         "configured": configured,
         "preview_ready": await _path_ready(),
@@ -257,7 +254,6 @@ async def status() -> dict:
         "has_ssn_session_id": bool(values.get("SSN_SESSION_ID")),
         "has_fb_stream_url": bool(values.get("FACEBOOK_STREAM_URL")),
         "facebook_server_url": values.get("FACEBOOK_SERVER_URL") or _facebook_server(values.get("FACEBOOK_STREAM_URL", "")),
-        "has_tiktok_stream_url": bool(values.get("TIKTOK_STREAM_URL")),
         "openai_model": values.get("LLM_MODEL", "") if configured["openai"] else "",
         "has_openai_key": configured["openai"],
     }
@@ -530,7 +526,6 @@ async def save_live(payload: LivePayload) -> dict:
         facebook_stream = payload.facebook_stream_url.strip() or _facebook_destination(server, payload.facebook_stream_key, existing_facebook)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    tiktok_stream = payload.tiktok_stream_url.strip() or current.get("TIKTOK_STREAM_URL", "")
     updates = {
         "COMMENT_SOURCE": payload.comment_source,
         "FB_OBJECT_ID": payload.fb_object_id.strip(),
@@ -539,7 +534,6 @@ async def save_live(payload: LivePayload) -> dict:
         "FACEBOOK_SERVER_URL": server,
         "FACEBOOK_STREAM_URL": facebook_stream,
         "TIKTOK_UNIQUE_ID": payload.tiktok_unique_id.strip().lstrip("@"),
-        "TIKTOK_STREAM_URL": tiktok_stream,
         "FB_POLL_SECONDS": f"{payload.poll_seconds:g}",
         "FB_BATCH_SECONDS": f"{payload.batch_seconds:g}",
         "DEMO_SALES_MODE": str(payload.demo_sales_mode).lower(),
@@ -548,10 +542,7 @@ async def save_live(payload: LivePayload) -> dict:
     if (_supervisor_status("fb-avatar-forwarder") == "RUNNING"
             and facebook_stream != existing_facebook):
         raise HTTPException(status_code=409, detail="Dừng gửi Facebook trước khi đổi URL hoặc khóa luồng Facebook")
-    if (_supervisor_status("fb-avatar-tiktok-forwarder") == "RUNNING"
-            and tiktok_stream != current.get("TIKTOK_STREAM_URL", "")):
-        raise HTTPException(status_code=409, detail="Dừng gửi TikTok trước khi đổi RTMP URL hoặc khóa luồng TikTok")
-    pipeline_keys = {"COMMENT_SOURCE", "FB_OBJECT_ID", "FB_PAGE_ACCESS_TOKEN", "SSN_SESSION_ID", "TIKTOK_UNIQUE_ID", "FB_POLL_SECONDS", "FB_BATCH_SECONDS", "DEMO_SALES_MODE", "STREAM_URL"}
+    pipeline_keys = {"FB_POLL_SECONDS", "FB_BATCH_SECONDS", "DEMO_SALES_MODE", "STREAM_URL"}
     restart_pipeline = any(current.get(key, "") != updates[key] for key in pipeline_keys)
     env_file.update(updates)
     if restart_pipeline and _supervisor_status("fb-avatar-pipeline") == "RUNNING":
@@ -605,26 +596,9 @@ async def stop_facebook() -> dict:
     return {"ok": True}
 
 
-@app.post("/api/live/tiktok/start")
-async def start_tiktok() -> dict:
-    if not env_file.read().get("TIKTOK_STREAM_URL"):
-        raise HTTPException(status_code=400, detail="Hãy lưu URL và khóa luồng TikTok trước")
-    if not await _path_ready():
-        raise HTTPException(status_code=409, detail="Hãy bật và chờ preview có tín hiệu trước")
-    if _supervisor_status("fb-avatar-tiktok-forwarder") != "RUNNING":
-        await asyncio.to_thread(_start_or_restart, "fb-avatar-tiktok-forwarder")
-    return {"ok": True, "message": "Đang gửi tín hiệu đến TikTok"}
-
-
-@app.post("/api/live/tiktok/stop")
-async def stop_tiktok() -> dict:
-    await asyncio.to_thread(_stop, "fb-avatar-tiktok-forwarder")
-    return {"ok": True}
-
-
 @app.post("/api/live/stop")
 async def stop_live() -> dict:
-    for name in ["fb-avatar-forwarder", "fb-avatar-tiktok-forwarder", "fb-avatar-pipeline", "fb-avatar-musetalk"]:
+    for name in ["fb-avatar-forwarder", "fb-avatar-pipeline", "fb-avatar-musetalk"]:
         await asyncio.to_thread(_stop, name)
     return {"ok": True}
 

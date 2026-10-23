@@ -21,7 +21,6 @@ make_wrapper fb-avatar-mediamtx run_mediamtx.sh
 make_wrapper fb-avatar-musetalk run_musetalk.sh
 make_wrapper fb-avatar-pipeline run_pipeline.sh
 make_wrapper fb-avatar-forwarder run_forwarder.sh
-make_wrapper fb-avatar-tiktok-forwarder run_forwarder.sh tiktok
 
 cat >/opt/supervisor-scripts/fb-avatar-control.sh <<EOF
 #!/usr/bin/env bash
@@ -56,7 +55,7 @@ write_service fb-avatar-control 15 3
 write_service fb-avatar-musetalk 20 10
 write_service fb-avatar-pipeline 30 10
 write_service fb-avatar-forwarder 40 3 false
-write_service fb-avatar-tiktok-forwarder 40 3 false
+rm -f /etc/supervisor/conf.d/fb-avatar-tiktok-forwarder.conf /opt/supervisor-scripts/fb-avatar-tiktok-forwarder.sh
 
 /venv/main/bin/python - <<'PY'
 import yaml
@@ -77,4 +76,4 @@ PY
 supervisorctl reread
 supervisorctl update
 supervisorctl restart caddy
-supervisorctl status fb-avatar-mediamtx fb-avatar-control fb-avatar-musetalk fb-avatar-pipeline fb-avatar-forwarder fb-avatar-tiktok-forwarder || true
+supervisorctl status fb-avatar-mediamtx fb-avatar-control fb-avatar-musetalk fb-avatar-pipeline fb-avatar-forwarder || true

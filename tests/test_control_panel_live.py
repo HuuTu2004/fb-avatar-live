@@ -88,8 +88,7 @@ class PersonalFacebookLiveTests(unittest.TestCase):
         }
         payload = panel.LivePayload(comment_source="tiktok", tiktok_unique_id="@creator",
                                     demo_sales_mode=True, facebook_server_url=panel.FACEBOOK_SERVER_URL)
-        states = {"fb-avatar-forwarder": "RUNNING", "fb-avatar-tiktok-forwarder": "STOPPED",
-                  "fb-avatar-pipeline": "RUNNING"}
+        states = {"fb-avatar-forwarder": "RUNNING", "fb-avatar-pipeline": "RUNNING"}
         with patch.object(panel.env_file, "read", return_value=current), \
              patch.object(panel.env_file, "update") as update, \
              patch.object(panel, "_supervisor_status", side_effect=states.get), \
@@ -97,7 +96,7 @@ class PersonalFacebookLiveTests(unittest.TestCase):
             asyncio.run(panel.save_live(payload))
         self.assertEqual(update.call_args.args[0]["TIKTOK_UNIQUE_ID"], "creator")
         self.assertEqual(update.call_args.args[0]["FACEBOOK_STREAM_URL"], destination)
-        restart.assert_called_once_with("fb-avatar-pipeline")
+        restart.assert_not_called()
 
     def test_running_facebook_destination_cannot_change(self) -> None:
         panel = self.panel
@@ -135,9 +134,10 @@ class PersonalFacebookLiveTests(unittest.TestCase):
             self.assertEqual(response.headers["cache-control"], "no-store")
 
     def test_facebook_forwarder_cannot_send_to_tiktok(self) -> None:
-        with patch.dict(os.environ, {"FACEBOOK_STREAM_URL": "rtmps://fb.invalid/key", "TIKTOK_STREAM_URL": "rtmp://tt.invalid/key"}):
+        with patch.dict(os.environ, {"FACEBOOK_STREAM_URL": "rtmps://fb.invalid/key"}):
             self.assertEqual(_destinations("facebook"), [("Facebook", "rtmps://fb.invalid/key")])
-            self.assertEqual(_destinations("tiktok"), [("TikTok", "rtmp://tt.invalid/key")])
+            with self.assertRaises(ValueError):
+                _destinations("tiktok")
 
     def test_retrying_forwarder_is_not_reported_as_sending(self) -> None:
         panel = self.panel

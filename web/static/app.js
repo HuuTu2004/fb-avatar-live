@@ -41,10 +41,9 @@ function updateStatus(data) {
   $('#metric-pipeline').textContent = serviceLabel(data.services.pipeline);
   $('#metric-preview').textContent = data.preview_ready ? 'Có tín hiệu' : 'Chờ tín hiệu';
   $('#metric-openai').textContent = data.configured.openai ? data.openai_model || 'Đã cấu hình' : 'Chưa cấu hình';
-  const channelCount = Number(data.configured.facebook_stream) + Number(data.configured.tiktok_stream);
+  const channelCount = Number(data.configured.facebook_stream);
   $('#metric-channels').textContent = data.services.forwarder === 'RUNNING' ?
     (data.forwarder_health?.facebook === 'sending' ? 'Facebook đang gửi' : 'Facebook đang thử kết nối') :
-    data.services['tiktok-forwarder'] === 'RUNNING' ? 'TikTok đang gửi' :
     channelCount ? `${channelCount} kênh đã lưu` : 'Chưa cấu hình';
   $('#global-dot').classList.toggle('ok', running);
   $('#global-text').textContent = running ? 'Pipeline đang chạy' : 'Pipeline đang dừng';
@@ -56,7 +55,7 @@ function updateStatus(data) {
   if (['facebook', 'both'].includes(data.comment_source)) checks.push(['Facebook comments', data.configured.facebook]);
   if (data.comment_source === 'facebook_personal') checks.push(['Facebook cá nhân · SSN', data.configured.facebook_personal]);
   if (['tiktok', 'both'].includes(data.comment_source)) checks.push(['TikTok comments', data.configured.tiktok]);
-  if (data.configured.facebook_stream || data.configured.tiktok_stream) checks.push(['Đích phát đã lưu', true]);
+  if (data.configured.facebook_stream) checks.push(['Đích phát đã lưu', true]);
   checks.push(['MuseTalk', data.services.musetalk === 'RUNNING']);
   $('#checklist').innerHTML = checks.map(([name, ok]) => `<div class="check"><b>${name}</b><i class="${ok ? 'ok' : ''}">${ok ? 'Sẵn sàng' : 'Chưa xong'}</i></div>`).join('');
   if (!liveFormLoaded) {
@@ -81,10 +80,7 @@ function updateStatus(data) {
   $('#facebook-status').classList.toggle('ok', facebookHealth === 'sending');
   $('#start-facebook').disabled = facebookRunning || !data.has_fb_stream_url || !data.preview_ready;
   $('#stop-facebook').disabled = !facebookRunning;
-  const tiktokRunning = data.services['tiktok-forwarder'] === 'RUNNING';
-  $('#start-tiktok').disabled = tiktokRunning || !data.has_tiktok_stream_url || !data.preview_ready;
-  $('#stop-tiktok').disabled = !tiktokRunning;
-  $('#live-save-hint').hidden = !(facebookRunning || tiktokRunning);
+  $('#live-save-hint').hidden = !facebookRunning;
   $('#openai-key-hint').textContent = data.has_openai_key ? 'Đã có key lưu trên máy. Giữ trống để tiếp tục dùng.' : 'Key chỉ được lưu trong .env trên máy Vast.';
   if (data.openai_model && ![...$('#openai-model').options].some(o => o.value === data.openai_model)) {
     $('#openai-model').add(new Option(data.openai_model, data.openai_model));
@@ -307,10 +303,10 @@ $('#save-live').onclick = async () => {
       ssn_session_id:$('#ssn-session').value,
       facebook_server_url:$('#fb-server').value, facebook_stream_key:$('#fb-key').value,
       tiktok_unique_id:$('#tiktok-user').value,
-      tiktok_stream_url:$('#tiktok-stream').value, poll_seconds:Number($('#poll-seconds').value), batch_seconds:Number($('#batch-seconds').value),
+      poll_seconds:Number($('#poll-seconds').value), batch_seconds:Number($('#batch-seconds').value),
       demo_sales_mode:$('#demo-sales-mode').checked
     })});
-    $('#fb-token').value = ''; $('#ssn-session').value = ''; $('#fb-key').value = ''; $('#tiktok-stream').value = '';
+    $('#fb-token').value = ''; $('#ssn-session').value = ''; $('#fb-key').value = '';
     liveFormLoaded = false; toast('Đã lưu cấu hình kênh Live'); refreshStatus();
   } catch (error) { toast(error.message, true); }
   finally { busy(button, false); }
@@ -336,8 +332,6 @@ async function channelAction(channel, action, button) {
 }
 $('#start-facebook').onclick = () => channelAction('facebook', 'start', $('#start-facebook'));
 $('#stop-facebook').onclick = () => channelAction('facebook', 'stop', $('#stop-facebook'));
-$('#start-tiktok').onclick = () => channelAction('tiktok', 'start', $('#start-tiktok'));
-$('#stop-tiktok').onclick = () => channelAction('tiktok', 'stop', $('#stop-tiktok'));
 $('#test-live').onclick = async () => {
   const message = $('#test-message').value.trim();
   if (!message) { toast('Nhập bình luận trước khi gửi', true); return; }

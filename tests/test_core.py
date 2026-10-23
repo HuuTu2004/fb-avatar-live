@@ -13,12 +13,52 @@ from fb_avatar_live.core import (
     FacebookPersonalCommentSource,
     Pipeline,
     SalesDemoLLM,
+    TikTokCommentSource,
     ZeroTTSEngine,
     split_utterances,
 )
 
 
 class CoreTests(unittest.TestCase):
+    def test_tiktok_reader_closes_without_stopping_the_event_loop(self) -> None:
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        async def check() -> None:
+            ready = asyncio.Event()
+            clients = []
+
+            class Client:
+                def __init__(self, unique_id):
+                    self.unique_id = unique_id
+                    self.connected = False
+                    self.web = SimpleNamespace(close=AsyncMock())
+                    clients.append(self)
+
+                def add_listener(self, _event, _listener):
+                    pass
+
+                async def start(self, **_kwargs):
+                    self.connected = True
+                    self.connection = asyncio.get_running_loop().create_future()
+                    ready.set()
+                    return self.connection
+
+                async def disconnect(self):
+                    self.connected = False
+                    if not self.connection.done():
+                        self.connection.set_result(None)
+
+            with patch("TikTokLive.TikTokLiveClient", Client):
+                source = TikTokCommentSource(SimpleNamespace(tiktok_unique_id="bom_36a"))
+                self.assertEqual(await source.fetch(), [])
+                await asyncio.wait_for(ready.wait(), timeout=1)
+                await source.aclose()
+                self.assertEqual(clients[0].unique_id, "@bom_36a")
+                clients[0].web.close.assert_awaited_once()
+
+        asyncio.run(check())
+
     def test_ssn_reader_accepts_only_facebook_chat_and_strips_markup(self) -> None:
         raw = '{"type":"facebook","id":"comment-1","chatname":"An","chatmessage":"<b>Vô thường</b> là gì?","textonly":false}'
         comment = FacebookPersonalCommentSource.parse_message(raw)
@@ -217,7 +257,8 @@ class CoreTests(unittest.TestCase):
         viewer_prompt = client.requests[2]["messages"][1]["content"]
         self.assertIn("Vô thường là gì?", viewer_prompt)
         self.assertIn("lượt 1 trong 3 lượt", viewer_prompt)
-        self.assertIn("Giải đáp thẳng", viewer_prompt)
+        self.assertIn("giải đáp thẳng", viewer_prompt)
+        self.assertIn("Có thí chủ hỏi về", viewer_prompt)
         self.assertIn("ví dụ đời thường", client.requests[3]["messages"][1]["content"])
         self.assertIn("cách thực hành nhỏ", client.requests[4]["messages"][1]["content"])
         self.assertIn(first_part, client.requests[3]["messages"][1]["content"])

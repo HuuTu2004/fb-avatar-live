@@ -1,0 +1,4 @@
+av==19.0.2
+numpy==2.3.4
+pyvirtualcam==0.15.0
+sounddevice==0.5.3

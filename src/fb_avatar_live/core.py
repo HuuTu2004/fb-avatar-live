@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 import hashlib
 import html
 import json
@@ -215,6 +216,12 @@ class FacebookPersonalCommentSource:
         self._comments.clear()
         return comments
 
+    async def aclose(self) -> None:
+        if self._task:
+            self._task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._task
+
 
 class TikTokCommentSource:
     """Read public LIVE comments through TikTok's Webcast connection."""
@@ -223,13 +230,17 @@ class TikTokCommentSource:
         self.unique_id = settings.tiktok_unique_id
         self._comments: deque[Comment] = deque(maxlen=1000)
         self._task: asyncio.Task | None = None
+        self._client = None
+        self._stopping = False
 
     async def _connect(self) -> None:
         from TikTokLive import TikTokLiveClient
+        from TikTokLive.client.errors import UserOfflineError
         from TikTokLive.events import CommentEvent
 
-        while True:
+        while not self._stopping:
             client = TikTokLiveClient(unique_id=f"@{self.unique_id}")
+            self._client = client
 
             async def on_comment(event: CommentEvent) -> None:
                 message = str(event.comment or "").strip()
@@ -243,14 +254,22 @@ class TikTokCommentSource:
 
             client.add_listener(CommentEvent, on_comment)
             try:
-                await client.connect(fetch_room_info=False, fetch_gift_info=False)
+                connection = await client.start(fetch_room_info=False, fetch_gift_info=False)
+                await connection
+            except UserOfflineError:
+                log.info("TikTok @%s is offline; waiting for LIVE", self.unique_id)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 log.exception("TikTok LIVE connection failed; retrying")
             finally:
-                await client.close()
-            await asyncio.sleep(5)
+                if client.connected:
+                    with suppress(asyncio.CancelledError):
+                        await client.disconnect()
+                await client.web.close()
+                self._client = None
+            if not self._stopping:
+                await asyncio.sleep(5)
 
     async def fetch(self) -> list[Comment]:
         if self._task is None or self._task.done():
@@ -260,6 +279,15 @@ class TikTokCommentSource:
         comments = list(self._comments)
         self._comments.clear()
         return comments
+
+    async def aclose(self) -> None:
+        self._stopping = True
+        if self._client and self._client.connected:
+            await self._client.disconnect()
+        if self._task:
+            self._task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._task
 
 
 class CombinedCommentSource:
@@ -275,6 +303,11 @@ class CombinedCommentSource:
             else:
                 comments.extend(batch)
         return comments
+
+    async def aclose(self) -> None:
+        for source in self.sources:
+            if hasattr(source, "aclose"):
+                await source.aclose()
 
 
 class DemoCommentSource:
@@ -438,7 +471,7 @@ class ExternalLLM:
             if previous_parts:
                 earlier_replies = earlier_replies[:-len(previous_parts)]
             step = (
-                "Giải đáp thẳng điều người xem băn khoăn bằng 1 đến 2 câu ngắn; chọn ý Phật pháp liên quan, giải nghĩa từ khó."
+                "Mở đầu tự nhiên bằng 'Có thí chủ hỏi về...' và nêu ngắn gọn vấn đề đang được hỏi, không đọc nguyên văn bình luận. Sau đó giải đáp thẳng bằng 1 đến 2 câu ngắn, chọn ý Phật pháp liên quan và giải nghĩa từ khó."
                 if followup_index == 0 else
                 "Nói tiếp bằng một ví dụ đời thường cụ thể giúp người nghe hiểu ý vừa giải đáp; không lặp lời trước."
                 if followup_index == 1 else
@@ -450,7 +483,7 @@ class ExternalLLM:
                 + str(turn_total) + " lượt giải đáp cùng " + scope + ". "
                 + step + " Giọng giảng ấm áp, đời thường, gần gũi, dễ hiểu; mỗi lượt tối đa 200 ký tự để phát liền mạch. "
                 "Nếu bình luận không liên quan Phật pháp, đáp ngắn ý cần thiết rồi dẫn về chủ đề phù hợp. "
-                "Không đọc nguyên văn bình luận, không lặp câu hỏi hoặc mở đầu bằng 'có bạn hỏi', 'dạ'. "
+                "Chỉ lượt đầu mới dẫn 'Có thí chủ hỏi về...'; các lượt sau nối tiếp ý giải đáp, không nhắc lại lời dẫn, không mở đầu bằng 'dạ'. "
                 "Phân biệt quan điểm giữa các truyền thống khi cần; nếu không chắc, nói rõ giới hạn hiểu biết. "
                 "Không bịa lời kinh hay tự nhận chứng ngộ. Các phần đã nói để nối tiếp, không lặp: "
                 + json.dumps(previous_parts, ensure_ascii=False) + ". Các lượt trước đó: "
@@ -703,5 +736,7 @@ class Pipeline:
                 self.render_video(),
             )
         finally:
+            if hasattr(self.source, "aclose"):
+                await self.source.aclose()
             await asyncio.to_thread(self.streamer.stop)
             await asyncio.to_thread(self.store.close)

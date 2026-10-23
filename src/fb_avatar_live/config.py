@@ -6,9 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-def load_env(path: Path = Path(".env")) -> None:
+def read_env(path: Path = Path(".env")) -> dict[str, str]:
     if not path.exists():
-        return
+        return {}
+    values = {}
     for raw in path.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -17,7 +18,13 @@ def load_env(path: Path = Path(".env")) -> None:
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             value = value[1:-1]
-        os.environ.setdefault(key.strip(), value)
+        values[key.strip()] = value
+    return values
+
+
+def load_env(path: Path = Path(".env")) -> None:
+    for key, value in read_env(path).items():
+        os.environ.setdefault(key, value)
 
 
 def _integer(name: str, default: int) -> int:
