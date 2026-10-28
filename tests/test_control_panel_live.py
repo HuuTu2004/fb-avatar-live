@@ -17,6 +17,38 @@ from fb_avatar_live.core import Comment, CommentStore
 
 
 class PersonalFacebookLiveTests(unittest.TestCase):
+    def test_missing_supervisor_reports_missing_service_and_clear_start_error(self) -> None:
+        with patch.object(self.panel.subprocess, "run", side_effect=FileNotFoundError):
+            self.assertEqual(self.panel._supervisor_status("fb-avatar-pipeline"), "MISSING")
+            with self.assertRaisesRegex(RuntimeError, "Supervisor"):
+                self.panel._start_or_restart("fb-avatar-pipeline")
+
+    def test_reply_settings_round_trip_preserves_multiline_text_and_other_configuration(self) -> None:
+        panel = self.panel
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / ".env"
+            path.write_text("LLM_SYSTEM_PROMPT=Vai trò cũ\nLLM_API_KEY=keep-secret\n", encoding="utf-8")
+            with patch.object(panel, "env_file", panel.EnvFile(path)), \
+                 patch.object(panel, "_start_or_restart") as restart:
+                defaults = asyncio.run(panel.reply_settings())
+                self.assertEqual(defaults["system_prompt"], "Vai trò cũ")
+                payload = panel.ReplySettings(system_prompt='Bạn là cô Lan.\nNói "gần gũi".\u2028Dễ hiểu.',
+                                              topics=[" Nấu ăn ", "Mẹo gia đình"], viewer_address=" bạn ")
+                self.assertEqual(asyncio.run(panel.save_reply_settings(payload)), {"ok": True})
+                self.assertEqual(asyncio.run(panel.reply_settings()), payload.model_dump())
+                self.assertEqual(panel.env_file.read()["LLM_API_KEY"], "keep-secret")
+                self.assertEqual(len(path.read_text(encoding="utf-8").splitlines()), 3)
+                restart.assert_not_called()
+
+    def test_reply_settings_reject_empty_or_oversized_fields(self) -> None:
+        from pydantic import ValidationError
+
+        for fields in ({"system_prompt": " "}, {"topics": []}, {"topics": [" "]},
+                       {"topics": ["x" * 201]}, {"topics": ["a"] * 101},
+                       {"viewer_address": " "}, {"viewer_address": "a\nb"}):
+            with self.subTest(fields=fields), self.assertRaises(ValidationError):
+                self.panel.ReplySettings(**fields)
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.directory = tempfile.TemporaryDirectory()

@@ -8,7 +8,7 @@ TikTok LIVE Webcast ─┴─> SQLite dedupe/batch -> hosted LLM
                        -> short speech chunks -> ZeroTTS (CPU)
                        -> persistent MuseTalk 1.5 (GPU)
                        -> FFmpeg H.264/Opus -> MediaMTX
-                          ├─ WebRTC/WHEP preview in control panel
+                          ├─ WebRTC/WHEP endpoint (optional)
                           ├─ H.264/AAC -> Facebook RTMPS
                           └─ H.264/AAC -> TikTok LIVE Studio trên Windows (camera + micro ảo)
 ```
@@ -72,13 +72,17 @@ STREAM_URL=rtsp://127.0.0.1:8554/avatar
 FACEBOOK_STREAM_URL=rtmps://...private-stream-key...
 ```
 
-Để xem WebRTC trước khi live thật, chọn **Facebook cá nhân · bình luận thử trên web**, bấm **Bắt đầu preview**, rồi gửi câu kiểm tra trên Dashboard. Nút này chỉ chạy preview, không gửi tín hiệu ra Facebook/TikTok.
+Để chuẩn bị luồng trước khi live thật, chọn nguồn bình luận, bấm **Khởi động luồng**, rồi gửi câu kiểm tra trên Dashboard. Dashboard chỉ điều khiển và hiển thị trạng thái, không nhúng player WebRTC; xem hình/tiếng qua cửa sổ stream RTMP hoặc kênh phát. Nút này chưa gửi tín hiệu ra Facebook/TikTok.
 
-Để phát trên Facebook cá nhân, mở [Live Producer](https://www.facebook.com/live/producer/), chọn trang cá nhân và **Phần mềm phát trực tiếp**. Trong mục Avatar & Live, nhập riêng **URL máy chủ** và **khóa luồng**, bấm **Lưu cấu hình Live**, chờ preview có hình/tiếng rồi bấm **Bắt đầu gửi lên Facebook**. Kiểm tra tín hiệu trong Live Producer và bấm **Phát trực tiếp** tại Facebook. **Dừng gửi Facebook** chỉ tắt đường phát ra Facebook; preview vẫn chạy.
+Để phát trên Facebook cá nhân, mở [Live Producer](https://www.facebook.com/live/producer/), chọn trang cá nhân và **Phần mềm phát trực tiếp**. Trong mục Avatar & Live, nhập riêng **URL máy chủ** và **khóa luồng**, bấm **Lưu cấu hình Live**, khởi động luồng và chờ trạng thái **Có tín hiệu** rồi bấm **Bắt đầu gửi lên Facebook**. Kiểm tra hình/tiếng trong Live Producer và bấm **Phát trực tiếp** tại Facebook. **Dừng gửi Facebook** chỉ tắt đường phát ra Facebook; luồng nội bộ vẫn chạy.
 
-Để đọc bình luận live **trang cá nhân**, cài [Social Stream Ninja](https://github.com/steveseguin/social_stream) trên Chrome. Đăng nhập Facebook và mở chính video live ở chế độ người xem, bật thu thập chat trong SSN. Trong SSN bật **Enable remote API control of extension** và **Send chat messages to API server**, rồi lấy Session ID từ URL dock của SSN. Trong Avatar & Live chọn **Facebook cá nhân · Social Stream Ninja**, dán Session ID, bật **Chia sẻ Phật pháp nói liên tục**, lưu cấu hình. Cần OpenAI API key để trả lời bình luận thật. SSN gửi bình luận qua máy chủ WebSocket của họ tới pipeline; giữ tab Facebook mở trong lúc live. Page token chỉ dành cho nguồn Facebook Page.
+Để đọc bình luận live **trang cá nhân**, cài [Social Stream Ninja](https://github.com/steveseguin/social_stream) trên Chrome. Đăng nhập Facebook và mở chính video live ở chế độ người xem, bật thu thập chat trong SSN. Trong SSN bật **Enable remote API control of extension** và **Send chat messages to API server**, rồi lấy Session ID từ URL dock của SSN. Trong Avatar & Live chọn **Facebook cá nhân · Social Stream Ninja**, dán Session ID, bật **Chia sẻ liên tục**, lưu cấu hình. Cần OpenAI API key để trả lời bình luận thật. SSN gửi bình luận qua máy chủ WebSocket của họ tới pipeline; giữ tab Facebook mở trong lúc live. Page token chỉ dành cho nguồn Facebook Page.
 
-Để kiểm tra avatar nói liên tục, bật **Chia sẻ Phật pháp nói liên tục** trong mục Avatar & Live. Khi chưa có OpenAI key, pipeline dùng vòng kịch bản nội bộ; sau khi lưu OpenAI key và model, cùng chế độ này sẽ dùng OpenAI để tạo lời dẫn từ các chủ đề giáo lý luân phiên.
+Để kiểm tra avatar nói liên tục, bật **Chia sẻ liên tục** trong mục Avatar & Live. Khi chưa có OpenAI key, pipeline dùng vòng kịch bản Phật pháp nội bộ; sau khi lưu OpenAI key và model, cùng chế độ này sẽ dùng OpenAI để tạo lời dẫn từ các chủ đề đã cấu hình.
+
+Trong **Dashboard → Nội dung AI**, sửa vai trò/nhân vật, hướng dẫn cách trả lời, danh sách chủ đề (mỗi dòng một chủ đề) và cách gọi chung khi không đọc được tên người xem. Bấm **Lưu nội dung AI** để áp dụng từ lượt AI tạo tiếp theo, không cần dừng live; đoạn tiếng/video đã tạo vẫn phát hết. Vai trò và chủ đề ban đầu mặc định là Phật pháp, có thể đổi sang nội dung khác. Cấu hình tùy chỉnh cần OpenAI; chế độ không có key vẫn chỉ dùng kịch bản Phật pháp có sẵn.
+
+Với bình luận, AI chọn một chủ đề hay nhất trong batch theo định hướng đã lưu và nhắc tên một người hỏi đại diện. Tên được chuẩn hóa chữ Unicode, bỏ emoji/ký tự trang trí; chuỗi số, handle tự sinh, tên quá dài hoặc chữ mà giọng Việt khó đọc sẽ dùng cách gọi chung. AI được hướng dẫn không đọc tên tục tĩu, xúc phạm hay giống chỉ dẫn, nhưng không thể bảo đảm lọc hoàn hảo mọi biệt danh. Tên gốc vẫn hiển thị trên dashboard. Nội dung tùy chỉnh được lưu trong `LLM_REPLY_SETTINGS` dưới dạng JSON một dòng trong `.env`, không ghi đè API key hoặc cấu hình kênh; cấu hình lỗi khi sửa tay sẽ giữ bản hợp lệ gần nhất trong pipeline.
 
 Không commit `.env`; token Facebook, API key LLM và stream key đều là bí mật.
 
@@ -112,18 +116,18 @@ mkdir -p data
 echo '{"id":"1","author":"An","message":"Vô thường là gì?"}' >> data/demo_comments.jsonl
 ```
 
-Pipeline vẫn gọi LLM, ZeroTTS, MuseTalk và stream thật. Preview nằm tại dashboard; đường WHEP nội bộ là `/preview/avatar/whep`.
+Pipeline vẫn gọi LLM, ZeroTTS, MuseTalk và stream thật. Dashboard không nhúng player; endpoint WHEP nội bộ `/preview/avatar/whep` vẫn được giữ cho các công cụ cần dùng.
 
 ## Điều chỉnh độ trễ
 
 - `FB_BATCH_SECONDS=2-3`: nhanh hơn nhưng gọi LLM nhiều hơn.
-- `FB_BATCH_SIZE=5-10`: số comment trong một lượt trả lời.
+- `FB_BATCH_SIZE=8`: tối đa 8 bình luận trong một lượt gọi AI, dùng cả khi bật chia sẻ Phật pháp liên tục. Cứ mỗi `FB_BATCH_SECONDS` (mặc định 3 giây), lấy tối đa số này từ hàng đợi; ít hơn vẫn trả lời, phần còn lại chờ batch kế tiếp.
 - `LLM_MAX_REPLY_CHARS=180-260`: câu ngắn giúp clip đầu xuất hiện sớm.
 - `ZEROTTS_PROVIDER=cuda`: trên instance RTX 3090, cài riêng ONNX Runtime GPU bằng `uv pip install --python .venv/bin/python --target .venv/ortgpu --no-deps onnxruntime-gpu==1.30.0`, rồi khởi động lại pipeline. Script chạy tự thêm thư mục này vào Python path. Nếu không có GPU runtime tương thích, giữ `ZEROTTS_PROVIDER=cpu`.
 - `ZEROTTS_THREADS=2`: số luồng ONNX đang dùng với CUDA; với CPU có thể dùng 4.
 - `ZEROTTS_WARMUP=true`: tổng hợp một câu rất ngắn khi khởi động để lượt bình luận đầu không chịu chi phí khởi tạo ONNX.
 - `SPEECH_CHUNK_CHARS=260`: giữ trọn một lượt trả lời trong cùng ngữ cảnh audio của MuseTalk, tránh đoạn đuôi ngắn và điểm nối giữa câu.
-- Khi bật chia sẻ Phật pháp liên tục và có OpenAI key, AI xáo 18 chủ đề, kết hợp 12 tình huống đời thường thành 216 cặp không trùng trước khi dùng lại, đồng thời kiểm tra nội dung với 24 lượt gần nhất. Mỗi bình luận được ưu tiên giải đáp qua 3 lượt gọi AI liên tiếp: giải đáp thẳng, nêu ví dụ đời thường, rồi gợi ý thực hành. Mỗi lượt đi vào hàng đợi tiếng/video ngay khi tạo xong. Khi không có bình luận, AI tiếp tục chủ đề gốc bằng lời giảng gần gũi, dễ hiểu. Có thể chỉnh vai trò và giọng nói trong `LLM_SYSTEM_PROMPT`; biến `DEMO_SALES_MODE` giữ tên cũ để tương thích cấu hình.
+- Khi bật chia sẻ Phật pháp liên tục và có OpenAI key, AI xáo 18 chủ đề, kết hợp 12 tình huống đời thường thành 216 cặp không trùng trước khi dùng lại, đồng thời kiểm tra nội dung với 24 lượt gần nhất. Bình luận được ưu tiên theo batch: AI đọc toàn bộ batch, gom câu hỏi gần ý rồi chọn một chủ đề hay nhất để trả lời tập trung. Ưu tiên câu hỏi Phật pháp rõ ràng, có chiều sâu, hữu ích và áp dụng được trong đời sống; nếu tương đương thì ưu tiên chủ đề nhiều người quan tâm và chưa trả lời gần đây. Lời chào và spam không được dùng để chọn chủ đề; nếu chỉ có các nội dung này, AI tiếp tục mạch chia sẻ. Các chủ đề không được chọn trong batch được bỏ qua, không xếp hàng trả lời riêng. Mỗi batch chỉ gọi AI một lần và đi vào hàng đợi tiếng/video ngay khi tạo xong; nếu AI lỗi hoặc trả rỗng, cả batch vẫn chờ để thử lại. Khi không có bình luận, AI tiếp tục chủ đề gốc bằng lời giảng gần gũi, dễ hiểu. Có thể chỉnh vai trò và giọng nói trong `LLM_SYSTEM_PROMPT`; biến `DEMO_SALES_MODE` giữ tên cũ để tương thích cấu hình.
 - `STREAM_PREBUFFER_SEGMENTS=2`: giữ hai lượt đầy đủ để che dao động thời gian của ZeroTTS/MuseTalk; đổi lại lần nói đầu tiên bắt đầu chậm hơn.
 - `MUSETALK_BATCH_SIZE=20`: tăng đến khi GPU gần đầy. RTX 3090 24 GB thường đủ dư cho inference FP16.
 - `MUSETALK_XFORMERS=true`: dùng attention tối ưu; script bootstrap cài bản khớp PyTorch 2.0.1.

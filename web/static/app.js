@@ -1,8 +1,6 @@
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 let state = null;
-let previewAudioEnabled = false;
-let previewVisible = localStorage.getItem('avatar-preview-visible') !== 'false';
 let liveFormLoaded = false;
 let commentsLoading = false;
 let commentsSignature = null;
@@ -19,7 +17,10 @@ async function api(path, options = {}) {
   const response = await fetch(path, options);
   if (!response.ok) {
     let message = `Lỗi ${response.status}`;
-    try { message = (await response.json()).detail || message; } catch (_) {}
+    try {
+      const detail = (await response.json()).detail;
+      message = Array.isArray(detail) ? detail.map(item => item.msg).join('; ') : detail || message;
+    } catch (_) {}
     throw new Error(message);
   }
   const type = response.headers.get('content-type') || '';
@@ -32,7 +33,7 @@ function busy(button, value, text = 'Đang xử lý…') {
 }
 
 function serviceLabel(value) {
-  return value === 'RUNNING' ? 'Đang chạy' : value === 'STARTING' ? 'Đang khởi động' : 'Đã dừng';
+  return value === 'RUNNING' ? 'Đang chạy' : value === 'STARTING' ? 'Đang khởi động' : value === 'MISSING' ? 'Chưa cài dịch vụ' : 'Đã dừng';
 }
 
 function updateStatus(data) {
@@ -50,7 +51,7 @@ function updateStatus(data) {
 
   const salesDemo = data.comment_source === 'demo' && data.demo_sales_mode;
   const checks = [
-    [salesDemo ? 'Chia sẻ Phật pháp' : 'OpenAI API', salesDemo || data.configured.openai], ['Voice', data.configured.voice], ['Avatar', data.configured.avatar]
+    [salesDemo ? 'Chia sẻ liên tục' : 'OpenAI API', salesDemo || data.configured.openai], ['Voice', data.configured.voice], ['Avatar', data.configured.avatar]
   ];
   if (['facebook', 'both'].includes(data.comment_source)) checks.push(['Facebook comments', data.configured.facebook]);
   if (data.comment_source === 'facebook_personal') checks.push(['Facebook cá nhân · SSN', data.configured.facebook_personal]);
@@ -76,7 +77,7 @@ function updateStatus(data) {
     'Kết nối Facebook bị ngắt; hệ thống đang thử lại. Dừng gửi rồi kiểm tra URL và khóa luồng trong Live Producer.' :
     facebookRunning && facebookHealth === 'sending' ? 'Đang gửi tín hiệu đến Facebook · kiểm tra hình/tiếng trong Live Producer' :
     facebookRunning ? 'Đang kết nối Facebook · dừng gửi trước khi sửa cấu hình' :
-    data.has_fb_stream_url ? (data.preview_ready ? 'Đã lưu khóa luồng · sẵn sàng gửi tín hiệu' : 'Đã lưu khóa luồng · bật preview trước khi gửi') : 'Chưa lưu khóa luồng Facebook';
+    data.has_fb_stream_url ? (data.preview_ready ? 'Đã lưu khóa luồng · sẵn sàng gửi tín hiệu' : 'Đã lưu khóa luồng · khởi động luồng trước khi gửi') : 'Chưa lưu khóa luồng Facebook';
   $('#facebook-status').classList.toggle('ok', facebookHealth === 'sending');
   $('#start-facebook').disabled = facebookRunning || !data.has_fb_stream_url || !data.preview_ready;
   $('#stop-facebook').disabled = !facebookRunning;
@@ -87,7 +88,6 @@ function updateStatus(data) {
     $('#openai-model').value = data.openai_model;
   }
   if (data.configured.avatar) loadAvatar();
-  if (data.preview_ready) loadPreview();
 }
 
 function showChannelSettings() {
@@ -153,47 +153,32 @@ async function refreshStatus(showError = false) {
   catch (error) { if (showError) toast(error.message, true); }
 }
 
-function loadPreview(force = false) {
-  if (!previewVisible) return;
-  const frame = $('#live-frame');
-  if (force || !frame.src) frame.src = `/preview/avatar?controls=true&muted=${!previewAudioEnabled}&autoplay=true&playsInline=true&t=${Date.now()}`;
-  frame.classList.add('ready');
-  $('#stage-empty').style.display = 'none';
-}
-
-function setPreviewVisible(visible) {
-  previewVisible = visible;
-  localStorage.setItem('avatar-preview-visible', String(visible));
-  $('#preview-card').classList.toggle('preview-hidden', !visible);
-  $('#toggle-preview').textContent = visible ? 'Ẩn xem live' : 'Hiện xem live';
-  if (visible) {
-    $('#stage-empty').style.display = state?.preview_ready ? 'none' : 'flex';
-    if (state?.preview_ready) loadPreview(true);
-  } else {
-    previewAudioEnabled = false;
-    $('#toggle-audio').textContent = 'Bật âm thanh';
-    const frame = $('#live-frame');
-    frame.src = 'about:blank';
-    frame.classList.remove('ready');
-  }
-}
-
-async function enablePreviewAudio(showMessage = false) {
-  const video = $('#live-frame').contentDocument?.querySelector('video');
-  if (!video) {
-    if (showMessage) toast('Preview chưa sẵn sàng, hãy tải lại preview', true);
-    return;
-  }
-  video.muted = false;
-  video.volume = 1;
+async function loadReplySettings() {
   try {
-    await video.play();
-    $('#toggle-audio').textContent = 'Âm thanh đã bật';
-    if (showMessage) toast('Đã bật âm thanh preview');
-  } catch (_) {
-    if (showMessage) toast('Chrome đang chặn âm thanh; hãy bấm biểu tượng loa trên video', true);
-  }
+    const data = await api('/api/replies');
+    $('#reply-persona').value = data.system_prompt;
+    $('#reply-topics').value = data.topics.join('\n');
+    $('#reply-address').value = data.viewer_address;
+    $('#save-replies').disabled = false;
+    $('#reply-result').textContent = 'Cấu hình đã lưu. Bạn có thể đổi ngay khi đang live.';
+  } catch (error) { $('#reply-result').textContent = error.message; }
 }
+
+$('#reply-form').onsubmit = async (event) => {
+  event.preventDefault();
+  const button = $('#save-replies');
+  busy(button, true);
+  try {
+    await api('/api/replies', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
+      system_prompt: $('#reply-persona').value.trim(),
+      topics: $('#reply-topics').value.split(/\r?\n/).map(topic => topic.trim()).filter(Boolean),
+      viewer_address: $('#reply-address').value.trim()
+    })});
+    $('#reply-result').textContent = 'Đã lưu. Áp dụng từ lượt AI tạo tiếp theo, không cần dừng live.';
+    toast('Đã lưu nội dung AI');
+  } catch (error) { $('#reply-result').textContent = error.message; toast(error.message, true); }
+  finally { busy(button, false); }
+};
 
 function loadAvatar() {
   const video = $('#avatar-video');
@@ -220,17 +205,8 @@ $$('.nav').forEach(button => button.addEventListener('click', () => {
   if (button.dataset.page === 'voice') loadVoices().catch(e => toast(e.message, true));
 }));
 
-$('#refresh').onclick = () => refreshStatus(true);
+$('#refresh').onclick = () => { refreshStatus(true); loadReplySettings(); };
 $('#comment-source').onchange = showChannelSettings;
-$('#reload-preview').onclick = () => loadPreview(true);
-$('#toggle-preview').onclick = () => setPreviewVisible(!previewVisible);
-$('#toggle-audio').onclick = async () => {
-  previewAudioEnabled = true;
-  await enablePreviewAudio(true);
-};
-$('#live-frame').addEventListener('load', () => {
-  if (previewAudioEnabled) setTimeout(() => enablePreviewAudio(), 250);
-});
 $('#show-key').onclick = () => {
   const input = $('#openai-key'); input.type = input.type === 'password' ? 'text' : 'password';
   $('#show-key').textContent = input.type === 'password' ? 'Hiện' : 'Ẩn';
@@ -318,7 +294,7 @@ $('#start-live').onclick = async () => {
   finally { busy(button,false); }
 };
 $('#stop-live').onclick = async () => {
-  try { await api('/api/live/stop',{method:'POST'}); toast('Đã dừng preview và các kênh'); refreshStatus(); }
+  try { await api('/api/live/stop',{method:'POST'}); toast('Đã dừng luồng và các kênh'); refreshStatus(); }
   catch (error) { toast(error.message,true); }
 };
 async function channelAction(channel, action, button) {
@@ -335,17 +311,11 @@ $('#stop-facebook').onclick = () => channelAction('facebook', 'stop', $('#stop-f
 $('#test-live').onclick = async () => {
   const message = $('#test-message').value.trim();
   if (!message) { toast('Nhập bình luận trước khi gửi', true); return; }
-  if (previewVisible) {
-    previewAudioEnabled = true;
-    if ($('#live-frame').contentDocument?.querySelector('video')) await enablePreviewAudio(true);
-    else loadPreview(true);
-  }
   try { const data=await api('/api/live/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message})}); $('#test-message').value=''; toast(data.message); refreshComments(); }
   catch(error){toast(error.message,true)}
 };
 
 setInterval(() => $('#clock').textContent = new Intl.DateTimeFormat('vi-VN',{dateStyle:'medium',timeStyle:'medium'}).format(new Date()),1000);
-setPreviewVisible(previewVisible);
-refreshStatus(); refreshComments(); loadVoices().catch(()=>{});
+refreshStatus(); refreshComments(); loadReplySettings(); loadVoices().catch(()=>{});
 setInterval(()=>refreshStatus(),5000);
 setInterval(refreshComments,2000);

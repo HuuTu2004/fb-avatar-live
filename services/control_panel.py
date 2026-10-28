@@ -25,11 +25,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
+from fb_avatar_live.config import ReplySettings, read_reply_settings
+
 
 ROOT = Path(os.getenv("ROOT", "/workspace/fb-avatar-live")).resolve()
 ENV_PATH = ROOT / ".env"
 WEB_ROOT = ROOT / "web"
-ASSET_DIR = Path("/workspace/assets")
+ASSET_DIR = ROOT / "assets" if os.name == "nt" else Path("/workspace/assets")
 VOICE_HOME = ROOT / "data" / "voices"
 PREVIEW_DIR = ROOT / "data" / "previews"
 OPENAI_BASE_URL = "https://api.openai.com/v1"
@@ -154,7 +156,10 @@ async def shutdown() -> None:
 
 
 def _supervisor_status(name: str) -> str:
-    result = subprocess.run(["supervisorctl", "status", name], capture_output=True, text=True)
+    try:
+        result = subprocess.run(["supervisorctl", "status", name], capture_output=True, text=True)
+    except FileNotFoundError:
+        return "MISSING"
     fields = result.stdout.split()
     if len(fields) > 1:
         return fields[1]
@@ -176,7 +181,10 @@ def _forwarder_health(channel: str, supervisor_state: str) -> str:
 def _start_or_restart(name: str) -> None:
     state = _supervisor_status(name)
     action = "restart" if state == "RUNNING" else "start"
-    result = subprocess.run(["supervisorctl", action, name], capture_output=True, text=True)
+    try:
+        result = subprocess.run(["supervisorctl", action, name], capture_output=True, text=True)
+    except FileNotFoundError as exc:
+        raise RuntimeError("Máy này chưa có Supervisor để điều khiển live. Chạy các dịch vụ live trên máy Linux/Vast.") from exc
     if result.returncode:
         raise RuntimeError((result.stderr or result.stdout).strip())
 
@@ -257,6 +265,20 @@ async def status() -> dict:
         "openai_model": values.get("LLM_MODEL", "") if configured["openai"] else "",
         "has_openai_key": configured["openai"],
     }
+
+
+@app.get("/api/replies")
+async def reply_settings() -> dict:
+    try:
+        return read_reply_settings(env_file.read()).model_dump()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Cấu hình nội dung AI đã lưu không hợp lệ") from exc
+
+
+@app.post("/api/replies")
+async def save_reply_settings(payload: ReplySettings) -> dict:
+    env_file.update({"LLM_REPLY_SETTINGS": json.dumps(payload.model_dump(), ensure_ascii=True)})
+    return {"ok": True}
 
 
 def _recent_comments(path: Path, limit: int) -> list[dict]:
@@ -576,7 +598,7 @@ async def start_live() -> dict:
         await asyncio.to_thread(_start_live)
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"ok": True, "message": "Preview đang khởi động; Facebook chưa phát"}
+    return {"ok": True, "message": "Luồng đang khởi động; Facebook chưa phát"}
 
 
 @app.post("/api/live/facebook/start")
@@ -584,7 +606,7 @@ async def start_facebook() -> dict:
     if not env_file.read().get("FACEBOOK_STREAM_URL"):
         raise HTTPException(status_code=400, detail="Hãy lưu URL máy chủ và khóa luồng Facebook trước")
     if not await _path_ready():
-        raise HTTPException(status_code=409, detail="Hãy bật và chờ preview có tín hiệu trước")
+        raise HTTPException(status_code=409, detail="Hãy khởi động luồng và chờ có tín hiệu trước")
     if _supervisor_status("fb-avatar-forwarder") != "RUNNING":
         await asyncio.to_thread(_start_or_restart, "fb-avatar-forwarder")
     return {"ok": True, "message": "Đang thử kết nối Facebook; theo dõi trạng thái rồi kiểm tra hình/tiếng trong Live Producer"}

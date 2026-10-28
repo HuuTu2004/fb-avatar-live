@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>Avatar Live Studio</title>
-  <link rel="stylesheet" href="/static/app.css?v=comments-feed-1">
+  <link rel="stylesheet" href="/static/app.css?v=no-webrtc-1">
 </head>
 <body>
   <div class="shell">
@@ -29,36 +29,38 @@
       <section class="page active" id="dashboard">
         <div class="metrics">
           <article class="metric"><div class="metric-icon violet">◈</div><div><span>Pipeline</span><strong id="metric-pipeline">—</strong></div></article>
-          <article class="metric"><div class="metric-icon cyan">◉</div><div><span>WebRTC</span><strong id="metric-preview">—</strong></div></article>
+          <article class="metric"><div class="metric-icon cyan">◉</div><div><span>Tín hiệu</span><strong id="metric-preview">—</strong></div></article>
           <article class="metric"><div class="metric-icon amber">⌁</div><div><span>OpenAI</span><strong id="metric-openai">—</strong></div></article>
           <article class="metric"><div class="metric-icon green">◫</div><div><span>Kênh live</span><strong id="metric-channels">—</strong></div></article>
         </div>
 
-        <div class="grid dashboard-grid">
-          <article class="card preview-card" id="preview-card">
-            <div class="card-head"><div><p class="label">LOW LATENCY PREVIEW</p><h2>Live WebRTC</h2></div><div class="preview-actions"><button class="link-btn" id="toggle-preview" type="button">Ẩn xem live</button><span class="live-badge"><i></i> PREVIEW</span></div></div>
-            <div class="stage">
-              <iframe id="live-frame" title="WebRTC live preview" allow="autoplay; fullscreen; picture-in-picture"></iframe>
-              <div class="stage-empty" id="stage-empty"><span>◈</span><strong>Chưa có tín hiệu</strong><small>Bắt đầu preview để xem trên web</small></div>
+        <article class="card control-card">
+          <div class="card-head"><div><p class="label">CONTROL</p><h2>Phiên phát</h2></div></div>
+          <div class="checklist" id="checklist"></div>
+          <div class="button-stack"><button class="primary" id="start-live">Khởi động luồng</button><button class="danger" id="stop-live">Dừng tất cả</button></div>
+          <div class="divider"></div>
+          <label for="test-message">Bình luận thử như người xem</label>
+          <textarea id="test-message" rows="3" placeholder="Ví dụ: Vô thường là gì?"></textarea>
+          <button class="secondary" id="test-live">Gửi bình luận thử</button>
+          <small>Nghe câu trả lời qua cửa sổ xem stream RTMP hoặc kênh đang phát; câu trả lời không hiện thành bình luận chữ.</small>
+        </article>
+        <article class="card form-card comments-card">
+          <div class="card-head"><div><p class="label">TÙY CHỈNH LỜI NÓI</p><h2>Nội dung AI</h2></div></div>
+          <form id="reply-form">
+            <div class="form-grid">
+              <div class="field wide"><label for="reply-persona">Vai trò / nhân vật và cách trả lời</label><textarea id="reply-persona" rows="5" required maxlength="8000" placeholder="Ví dụ: Bạn là người chia sẻ Phật pháp, giọng ấm áp, gần gũi…"></textarea><small>Mô tả nhân vật, giọng điệu, cách xưng hô và những điều AI cần tuân thủ.</small></div>
+              <div class="field wide"><label for="reply-topics">Chủ đề chia sẻ · mỗi dòng một chủ đề</label><textarea id="reply-topics" rows="6" required placeholder="Vô thường trong đời sống&#10;Cách ứng xử khi nóng giận"></textarea><small>Tối đa 100 chủ đề, mỗi chủ đề 200 ký tự. Khi có bình luận, AI chọn một chủ đề hay nhất trong batch theo định hướng này.</small></div>
+              <div class="field wide"><label for="reply-address">Cách gọi khi không đọc được tên</label><input id="reply-address" required maxlength="40" placeholder="Ví dụ: thí chủ, bạn, anh chị"><small>AI nhắc tên người hỏi khi tên rõ ràng; tên toàn ký tự rác, khó đọc hoặc không phù hợp sẽ dùng cách gọi này.</small></div>
             </div>
-            <div class="stream-meta"><span><i class="dot green-dot"></i> H.264 / Opus</span><span>1280 × 720</span><span>25 FPS</span><button class="link-btn" id="toggle-audio">Bật âm thanh</button><button class="link-btn" id="reload-preview">Tải lại preview</button></div>
-          </article>
-
-          <article class="card control-card">
-            <div class="card-head"><div><p class="label">CONTROL</p><h2>Phiên phát</h2></div></div>
-            <div class="checklist" id="checklist"></div>
-            <div class="button-stack"><button class="primary" id="start-live">Bắt đầu preview</button><button class="danger" id="stop-live">Dừng tất cả</button></div>
-            <div class="divider"></div>
-            <label for="test-message">Bình luận thử như người xem</label>
-            <textarea id="test-message" rows="3" placeholder="Ví dụ: Vô thường là gì?"></textarea>
-            <button class="secondary" id="test-live">Gửi bình luận thử</button>
-            <small>Nếu đang xem preview, nút này bật tiếng. Khi ẩn preview, bạn vẫn nghe câu trả lời qua live Facebook; câu trả lời không hiện thành bình luận chữ.</small>
-          </article>
-        </div>
+            <div class="form-actions"><button class="primary" id="save-replies" type="submit" disabled>Lưu nội dung AI</button></div>
+            <div class="result" id="reply-result" role="status">Đang tải cấu hình…</div>
+            <small>Cần cấu hình OpenAI để dùng nội dung tùy chỉnh. Lưu sẽ áp dụng từ lượt AI tạo tiếp theo, không cần dừng live; các đoạn đã tạo vẫn phát hết.</small>
+          </form>
+        </article>
         <article class="card comments-card">
           <div class="card-head"><div><p class="label">BÌNH LUẬN ĐANG QUÉT</p><h2>TikTok · Facebook · Bình luận thử</h2></div><span class="comments-count" id="comments-count">Đang tải…</span></div>
           <div class="comments-list" id="comments-list"><p class="comments-empty">Đang tải bình luận…</p></div>
-          <small class="comments-note">Cập nhật mỗi 2 giây. “AI đã xử lý” nghĩa là câu trả lời đã được đưa vào hàng đợi tiếng và video.</small>
+          <small class="comments-note">Cập nhật mỗi 2 giây. “AI đã xử lý” nghĩa là bình luận đã được xét trong batch và câu trả lời đã vào hàng đợi. Mỗi batch chọn một chủ đề để nói, các chủ đề khác được bỏ qua.</small>
         </article>
       </section>
 
@@ -105,7 +107,7 @@
           </article>
           <article class="card form-card">
             <div class="field"><label>Nguồn bình luận</label><select id="comment-source"><option value="demo">Bình luận thử trên web</option><option value="facebook_personal">Facebook cá nhân · Social Stream Ninja</option><option value="facebook">Facebook Page · Graph API</option><option value="tiktok">TikTok · đọc bình luận LIVE</option><option value="both">Facebook Page + TikTok</option></select></div>
-            <label class="result demo-toggle"><input id="demo-sales-mode" type="checkbox"> Chia sẻ Phật pháp nói liên tục; bình luận đến sẽ được ưu tiên. Khi đọc bình luận thật, cần OpenAI API key để trả lời.</label>
+            <label class="result demo-toggle"><input id="demo-sales-mode" type="checkbox"> Chia sẻ liên tục theo Nội dung AI trên Dashboard; bình luận đến sẽ được ưu tiên. Cần OpenAI để dùng nội dung tùy chỉnh; khi chưa có key, chỉ phát kịch bản Phật pháp có sẵn.</label>
             <div class="channel-panel" id="fb-personal-comments" hidden>
               <h3>Đọc bình luận live Facebook cá nhân</h3>
               <p>Cài <a href="https://github.com/steveseguin/social_stream" target="_blank" rel="noreferrer">Social Stream Ninja ↗</a> trên Chrome, mở video live dưới góc nhìn người xem và bật thu thập bình luận. Trong SSN bật “Enable remote API control of extension” và “Send chat messages to API server”, rồi dán Session ID ở đây. Giữ tab Facebook mở khi live.</p>
@@ -116,9 +118,9 @@
               <p>Mở <a href="https://www.facebook.com/live/producer/" target="_blank" rel="noreferrer">Facebook Live Producer ↗</a>, chọn trang cá nhân và <strong>Phần mềm phát trực tiếp</strong>. Sao chép URL máy chủ và khóa luồng vào hai ô dưới đây.</p>
               <div class="field"><label for="fb-server">URL máy chủ Facebook</label><input id="fb-server" type="url" autocomplete="off" value="rtmps://live-api-s.facebook.com:443/rtmp/"></div>
               <div class="field"><label for="fb-key">Khóa luồng Facebook</label><input id="fb-key" type="password" autocomplete="off" placeholder="Dán khóa FB-…; để trống nếu đã lưu"><small>Khóa chỉ lưu trong .env trên máy Vast, không hiển thị lại trên web.</small></div>
-              <div class="result" id="facebook-status">Lưu cấu hình, bật preview, rồi mới gửi tín hiệu Facebook.</div>
+              <div class="result" id="facebook-status">Lưu cấu hình, khởi động luồng, rồi mới gửi tín hiệu Facebook.</div>
               <div class="button-stack"><button class="primary" id="start-facebook">Bắt đầu gửi lên Facebook</button><button class="danger" id="stop-facebook">Dừng gửi Facebook</button></div>
-              <p>Sau khi Facebook nhận tín hiệu, kiểm tra hình/tiếng trong Live Producer và bấm <strong>Phát trực tiếp</strong> tại đó. Nút preview trên web không phát lên Facebook.</p>
+              <p>Sau khi Facebook nhận tín hiệu, kiểm tra hình/tiếng trong Live Producer và bấm <strong>Phát trực tiếp</strong> tại đó. Nút Khởi động luồng chưa gửi tín hiệu lên Facebook.</p>
             </div>
             <div class="channel-panel" id="fb-page-comments" hidden>
               <h3>Đọc bình luận Facebook Page</h3>
@@ -133,13 +135,13 @@
             </div>
             <div class="two-col"><div class="field"><label>Quét comment</label><div class="suffix"><input id="poll-seconds" type="number" min="0.5" max="30" step="0.5" value="2"><span>giây</span></div></div><div class="field"><label>Gom batch</label><div class="suffix"><input id="batch-seconds" type="number" min="0.5" max="30" step="0.5" value="2"><span>giây</span></div></div></div>
             <button class="primary full" id="save-live">Lưu cấu hình Live</button>
-            <small id="live-save-hint" hidden>Có thể đổi nguồn bình luận khi đang phát mà không ngắt preview. Dừng gửi Facebook trước khi đổi URL hoặc khóa luồng Facebook.</small>
+            <small id="live-save-hint" hidden>Có thể đổi nguồn bình luận khi đang phát mà không ngắt luồng. Dừng gửi Facebook trước khi đổi URL hoặc khóa luồng Facebook.</small>
           </article>
         </div>
       </section>
     </main>
   </div>
   <div id="toast" role="status"></div>
-  <script src="/static/app.js?v=comments-feed-1" defer></script>
+  <script src="/static/app.js?v=no-webrtc-1" defer></script>
 </body>
 </html>
