@@ -11,16 +11,16 @@ from .config import Settings, read_env
 from .core import (
     CombinedCommentSource,
     DemoCommentSource,
-    ExternalLLM,
     FacebookCommentSource,
     FacebookPersonalCommentSource,
     MuseTalkClient,
-    Pipeline,
-    SalesDemoLLM,
     TikTokCommentSource,
     ZeroTTSEngine,
 )
 from .streamer import SegmentStreamer
+from .live_reply.coordinator import LiveReplyCoordinator
+from .live_reply.engine import LiveReplyEngine, OpenAIResponses
+from .live_reply.knowledge import DharmaCatalog
 
 
 def make_comment_source(settings: Settings, client: httpx.AsyncClient):
@@ -80,15 +80,17 @@ async def async_main() -> None:
     timeout = httpx.Timeout(60, connect=15)
     async with httpx.AsyncClient(timeout=timeout) as client:
         source = ReloadingCommentSource(settings, client)
-        llm = (
-            ExternalLLM(settings, client)
-            if settings.llm_api_key and settings.llm_model
-            else SalesDemoLLM()
+        catalog = DharmaCatalog(Path(__file__).resolve().parent / "live_reply" / "dharma_cards.json")
+        engine = (
+            LiveReplyEngine(
+                OpenAIResponses(client, settings.llm_api_key, settings.llm_base_url), catalog,
+                max_utterance_chars=settings.llm_max_reply_chars,
+            ) if settings.llm_api_key else None
         )
-        pipeline = Pipeline(
+        pipeline = LiveReplyCoordinator(
             settings=settings,
             source=source,
-            llm=llm,
+            engine=engine,
             tts=ZeroTTSEngine(settings),
             renderer=MuseTalkClient(settings, client),
             streamer=SegmentStreamer(settings),

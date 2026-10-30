@@ -4,17 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>Avatar Live Studio</title>
-  <link rel="stylesheet" href="/static/app.css?v=no-webrtc-1">
+  <title>Trạm Bình An · Live Studio</title>
+  <link rel="stylesheet" href="/static/app.css?v=dashboard-2">
 </head>
 <body>
   <div class="shell">
     <aside class="sidebar">
-      <div class="brand"><span class="brand-mark">A</span><div><strong>Avatar Live</strong><small>Studio control</small></div></div>
+      <div class="brand"><span class="brand-mark">◈</span><div><strong>Trạm Bình An</strong><small>Live Studio</small></div></div>
       <nav>
-        <button class="nav active" data-page="dashboard"><span>◫</span> Dashboard</button>
+        <button class="nav active" data-page="dashboard"><span>◫</span> Tổng quan</button>
         <button class="nav" data-page="openai"><span>⌁</span> OpenAI API</button>
-        <button class="nav" data-page="voice"><span>◉</span> Clone voice</button>
+        <button class="nav" data-page="voice"><span>◉</span> Giọng đọc</button>
         <button class="nav" data-page="avatar"><span>◇</span> Avatar & Live</button>
       </nav>
       <div class="side-status"><i id="global-dot"></i><span id="global-text">Đang kiểm tra…</span></div>
@@ -22,11 +22,15 @@
 
     <main>
       <header>
-        <div><p class="eyebrow">MULTI-CHANNEL LIVE AUTOMATION</p><h1 id="page-title">Dashboard</h1></div>
+        <div><p class="eyebrow">ĐIỀU KHIỂN PHÁT TRỰC TIẾP</p><h1 id="page-title">Tổng quan</h1></div>
         <div class="header-actions"><span class="clock" id="clock"></span><button class="icon-btn" id="refresh" title="Làm mới">↻</button></div>
       </header>
 
       <section class="page active" id="dashboard">
+        <div class="dashboard-heading">
+          <div><p class="eyebrow">TRẠM BÌNH AN · TỔNG QUAN LIVE</p><h2>Điều hành và theo dõi</h2><p>Trạng thái phiên phát, bình luận mới và lời AI ở cùng một nơi.</p></div>
+          <span class="live-pill" id="dashboard-live-state" role="status">Đang kiểm tra phiên live…</span>
+        </div>
         <div class="metrics">
           <article class="metric"><div class="metric-icon violet">◈</div><div><span>Pipeline</span><strong id="metric-pipeline">—</strong></div></article>
           <article class="metric"><div class="metric-icon cyan">◉</div><div><span>Tín hiệu</span><strong id="metric-preview">—</strong></div></article>
@@ -34,43 +38,81 @@
           <article class="metric"><div class="metric-icon green">◫</div><div><span>Kênh live</span><strong id="metric-channels">—</strong></div></article>
         </div>
 
-        <article class="card control-card">
-          <div class="card-head"><div><p class="label">CONTROL</p><h2>Phiên phát</h2></div></div>
-          <div class="checklist" id="checklist"></div>
-          <div class="button-stack"><button class="primary" id="start-live">Khởi động luồng</button><button class="danger" id="stop-live">Dừng tất cả</button></div>
-          <div class="divider"></div>
-          <label for="test-message">Bình luận thử như người xem</label>
-          <textarea id="test-message" rows="3" placeholder="Ví dụ: Vô thường là gì?"></textarea>
-          <button class="secondary" id="test-live">Gửi bình luận thử</button>
-          <small>Nghe câu trả lời qua cửa sổ xem stream RTMP hoặc kênh đang phát; câu trả lời không hiện thành bình luận chữ.</small>
-        </article>
-        <article class="card form-card comments-card">
-          <div class="card-head"><div><p class="label">TÙY CHỈNH LỜI NÓI</p><h2>Nội dung AI</h2></div></div>
-          <form id="reply-form">
-            <div class="form-grid">
-              <div class="field wide"><label for="reply-persona">Vai trò / nhân vật và cách trả lời</label><textarea id="reply-persona" rows="5" required maxlength="8000" placeholder="Ví dụ: Bạn là người chia sẻ Phật pháp, giọng ấm áp, gần gũi…"></textarea><small>Mô tả nhân vật, giọng điệu, cách xưng hô và những điều AI cần tuân thủ.</small></div>
-              <div class="field wide"><label for="reply-topics">Chủ đề chia sẻ · mỗi dòng một chủ đề</label><textarea id="reply-topics" rows="6" required placeholder="Vô thường trong đời sống&#10;Cách ứng xử khi nóng giận"></textarea><small>Tối đa 100 chủ đề, mỗi chủ đề 200 ký tự. Khi có bình luận, AI chọn một chủ đề hay nhất trong batch theo định hướng này.</small></div>
-              <div class="field wide"><label for="reply-address">Cách gọi khi không đọc được tên</label><input id="reply-address" required maxlength="40" placeholder="Ví dụ: thí chủ, bạn, anh chị"><small>AI nhắc tên người hỏi khi tên rõ ràng; tên toàn ký tự rác, khó đọc hoặc không phù hợp sẽ dùng cách gọi này.</small></div>
+        <div class="dashboard-workspace">
+          <div class="dashboard-rail">
+            <article class="card control-card">
+              <div class="card-head"><div><p class="label">ĐIỀU KHIỂN</p><h2>Phiên phát</h2></div></div>
+              <div class="button-stack"><button class="primary" id="start-live">Khởi động luồng</button><button class="secondary" id="pause-ai">Tạm dừng lời AI</button><button class="danger" id="stop-live">Dừng tất cả</button></div>
+              <div class="divider"></div>
+              <label for="test-message">Gửi bình luận thử</label>
+              <textarea id="test-message" rows="2" placeholder="Ví dụ: Vô thường là gì?"></textarea>
+              <button class="secondary" id="test-live">Gửi và nghe thử</button>
+              <small>Nghe câu trả lời trong cửa sổ xem stream RTMP hoặc trên kênh đang phát.</small>
+            </article>
+            <article class="card readiness-card">
+              <div class="card-head"><div><p class="label">TÌNH TRẠNG</p><h2>Sẵn sàng phát</h2></div></div>
+              <div class="session-facts">
+                <div><span>Nguồn bình luận</span><strong id="dashboard-source">Đang kiểm tra…</strong></div>
+                <div><span>Lời AI</span><strong id="dashboard-voice-state">Đang kiểm tra…</strong></div>
+                <div><span>Giỏ hàng</span><strong id="dashboard-affiliate">Đang kiểm tra…</strong></div>
+              </div>
+              <div class="checklist" id="checklist"></div>
+            </article>
+          </div>
+          <div class="dashboard-streams">
+            <article class="card comments-card">
+              <div class="card-head"><div><p class="label">THEO DÕI TRỰC TIẾP</p><h2>Bình luận người xem</h2></div><span class="comments-count" id="comments-count">Đang tải…</span></div>
+              <div class="activity-stats" aria-label="Tình trạng 50 bình luận gần nhất">
+                <div><strong id="stat-waiting">—</strong><span>Đang chờ</span></div>
+                <div><strong id="stat-queued">—</strong><span>Chờ phát</span></div>
+                <div><strong id="stat-fed">—</strong><span>Vào bộ mã hóa</span></div>
+              </div>
+              <div class="comments-list" id="comments-list"><p class="comments-empty">Đang tải bình luận…</p></div>
+              <small class="comments-note">TikTok · Facebook · Bình luận thử · Cập nhật mỗi 2 giây</small>
+            </article>
+            <article class="card comments-card">
+              <div class="card-head"><div><p class="label">LỜI ĐÃ TẠO</p><h2>Câu trả lời và căn cứ</h2></div><span class="comments-count" id="replies-count">Đang tải…</span></div>
+              <div class="comments-list" id="replies-list"><p class="comments-empty">Chưa có lời AI.</p></div>
+              <small class="comments-note">“Đã cấp cho bộ mã hóa” chỉ xác nhận clip đã đi vào bộ mã hóa tại máy.</small>
+            </article>
+          </div>
+        </div>
+
+        <div class="dashboard-settings-heading"><div><p class="label">THIẾT LẬP NỘI DUNG</p><h2>Tùy chỉnh khi cần</h2></div><p>Thay đổi được áp dụng cho lời AI tạo tiếp theo.</p></div>
+        <div class="dashboard-settings">
+          <details class="card form-card settings-card">
+            <summary><span><span class="label">LỜI NÓI</span><strong>Nội dung AI</strong></span><span class="settings-chevron" aria-hidden="true">⌄</span></summary>
+            <form id="reply-form">
+              <div class="form-grid">
+                <div class="field wide"><label for="reply-persona">Giọng dẫn và cách kể chuyện</label><textarea id="reply-persona" rows="5" required maxlength="8000" placeholder="Ví dụ: Nói ấm áp, giản dị như đang trò chuyện…"></textarea><small>Đây là sở thích về văn phong. Quy tắc an toàn và nguồn Phật học được giữ trong ứng dụng.</small></div>
+                <div class="field wide"><label for="reply-topics">Chủ đề chia sẻ · mỗi dòng một chủ đề</label><textarea id="reply-topics" rows="6" required placeholder="Chánh niệm trong đời sống&#10;Cách ứng xử khi nóng giận"></textarea><small>Tối đa 100 chủ đề, mỗi chủ đề 200 ký tự. AI dùng các chủ đề khi không có bình luận cần đáp; câu hỏi của người xem được ưu tiên theo đúng ý họ.</small></div>
+                <div class="field wide"><label for="reply-address">Cách gọi khi không đọc được tên</label><input id="reply-address" required maxlength="40" placeholder="Ví dụ: quý vị, người hữu duyên"><small>AI nhắc tên người hỏi khi tên rõ ràng; tên khó đọc sẽ dùng cách gọi này.</small></div>
+              </div>
+              <div class="form-actions"><button class="primary" id="save-replies" type="submit" disabled>Lưu nội dung AI</button></div>
+              <div class="result" id="reply-result" role="status">Đang tải cấu hình…</div>
+              <small>Cần cấu hình OpenAI để dùng nội dung tùy chỉnh. Lưu sẽ áp dụng từ lượt AI tạo tiếp theo, không cần dừng live; các đoạn đã tạo vẫn phát hết.</small>
+            </form>
+          </details>
+          <details class="card form-card settings-card">
+            <summary><span><span class="label">GIỎ HÀNG</span><strong>Vòng Chú Lăng Nghiêm</strong></span><span class="settings-chevron" aria-hidden="true">⌄</span></summary>
+            <div class="settings-content">
+              <p>Lời phát chỉ nhắc nhẹ chiếc vòng trong giỏ hàng. Khi bật, video tự hiển thị nhãn thông tin liên kết ở góc dưới.</p>
+              <label class="result demo-toggle"><input id="affiliate-cart-confirmed" type="checkbox"> Tôi xác nhận đúng sản phẩm này đang hiển thị trong giỏ hàng của phiên live.</label>
+              <div class="form-actions"><button class="primary" id="save-affiliate" type="button">Lưu cấu hình giỏ hàng</button></div>
+              <div class="result" id="affiliate-result" role="status">Đang tải cấu hình…</div>
+              <small>Khi bật, lời giới thiệu phát thưa trong phần chia sẻ chung, cách xa bình luận riêng tư hoặc nhạy cảm. Không cần duyệt từng lời AI.</small>
             </div>
-            <div class="form-actions"><button class="primary" id="save-replies" type="submit" disabled>Lưu nội dung AI</button></div>
-            <div class="result" id="reply-result" role="status">Đang tải cấu hình…</div>
-            <small>Cần cấu hình OpenAI để dùng nội dung tùy chỉnh. Lưu sẽ áp dụng từ lượt AI tạo tiếp theo, không cần dừng live; các đoạn đã tạo vẫn phát hết.</small>
-          </form>
-        </article>
-        <article class="card comments-card">
-          <div class="card-head"><div><p class="label">BÌNH LUẬN ĐANG QUÉT</p><h2>TikTok · Facebook · Bình luận thử</h2></div><span class="comments-count" id="comments-count">Đang tải…</span></div>
-          <div class="comments-list" id="comments-list"><p class="comments-empty">Đang tải bình luận…</p></div>
-          <small class="comments-note">Cập nhật mỗi 2 giây. “AI đã xử lý” nghĩa là bình luận đã được xét trong batch và câu trả lời đã vào hàng đợi. Mỗi batch chọn một chủ đề để nói, các chủ đề khác được bỏ qua.</small>
-        </article>
+          </details>
+        </div>
       </section>
 
       <section class="page" id="openai">
-        <div class="intro"><div><p class="eyebrow">HẠNG MỤC 02</p><h2>OpenAI LLM</h2><p>Kiểm tra API key trực tiếp, tải danh sách model đang hoạt động và lưu cấu hình cho pipeline.</p></div><span class="hero-icon cyan">⌁</span></div>
+        <div class="intro"><div><p class="eyebrow">HẠNG MỤC 02</p><h2>OpenAI LLM</h2><p>Mọi lời do AI tạo dùng gpt-6-luna. Lời mở đầu và lời dự phòng là kịch bản cố định. Kiểm tra Responses API trước khi lưu.</p></div><span class="hero-icon cyan">⌁</span></div>
         <article class="card form-card">
           <div class="form-grid">
             <div class="field wide"><label>OpenAI API key</label><div class="secret-field"><input id="openai-key" type="password" autocomplete="off" placeholder="sk-…"><button type="button" id="show-key">Hiện</button></div><small id="openai-key-hint">Key chỉ được lưu trong .env trên máy Vast.</small></div>
             <div class="field"><label>Base URL</label><input value="https://api.openai.com/v1" disabled></div>
-            <div class="field"><label>Model</label><select id="openai-model"><option value="">Kiểm tra key để tải model</option></select></div>
+            <div class="field"><label>Model</label><input id="openai-model" value="gpt-6-luna" readonly></div>
           </div>
           <div class="form-actions"><button class="secondary" id="test-openai">Kiểm tra kết nối</button><button class="primary" id="save-openai">Lưu OpenAI</button></div>
           <div class="result" id="openai-result">Chưa kiểm tra kết nối.</div>
@@ -142,6 +184,6 @@
     </main>
   </div>
   <div id="toast" role="status"></div>
-  <script src="/static/app.js?v=no-webrtc-1" defer></script>
+  <script src="/static/app.js?v=dashboard-2" defer></script>
 </body>
 </html>

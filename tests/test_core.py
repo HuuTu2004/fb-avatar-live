@@ -332,7 +332,7 @@ class CoreTests(unittest.TestCase):
         self.assertIn("không coi spam lặp lại là nhiều người quan tâm", viewer_prompt)
         self.assertIn("không bịa câu hỏi", viewer_prompt)
         self.assertIn("Nhắc tên một người", viewer_prompt)
-        self.assertIn('"thí chủ"', viewer_prompt)
+        self.assertIn('"quý vị"', viewer_prompt)
         self.assertIn("260 ký tự", viewer_prompt)
         self.assertNotIn("Chủ đề bắt buộc lượt này", viewer_prompt)
         import json

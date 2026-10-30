@@ -48,6 +48,19 @@ function updateStatus(data) {
     channelCount ? `${channelCount} kênh đã lưu` : 'Chưa cấu hình';
   $('#global-dot').classList.toggle('ok', running);
   $('#global-text').textContent = running ? 'Pipeline đang chạy' : 'Pipeline đang dừng';
+  const liveState = $('#dashboard-live-state');
+  liveState.textContent = running ? 'Luồng đang chạy' :
+    data.services.pipeline === 'STARTING' ? 'Đang khởi động' : 'Luồng đang dừng';
+  liveState.classList.toggle('is-live', running);
+  const sourceNames = {
+    demo: 'Bình luận thử', facebook: 'Facebook Page', facebook_personal: 'Facebook cá nhân',
+    tiktok: 'TikTok', both: 'Facebook + TikTok'
+  };
+  $('#dashboard-source').textContent = sourceNames[data.comment_source] || 'Chưa chọn nguồn';
+  $('#dashboard-voice-state').textContent = data.ai_speech_paused ? 'Đã tạm dừng' :
+    running ? 'Đang hoạt động' : 'Chờ khởi động';
+  $('#dashboard-affiliate').textContent = data.affiliate_cart_confirmed ?
+    (data.demo_sales_mode ? 'Đã bật · nhắc thưa' : 'Đã xác nhận giỏ hàng') : 'Chưa bật';
 
   const salesDemo = data.comment_source === 'demo' && data.demo_sales_mode;
   const checks = [
@@ -83,10 +96,8 @@ function updateStatus(data) {
   $('#stop-facebook').disabled = !facebookRunning;
   $('#live-save-hint').hidden = !facebookRunning;
   $('#openai-key-hint').textContent = data.has_openai_key ? 'Đã có key lưu trên máy. Giữ trống để tiếp tục dùng.' : 'Key chỉ được lưu trong .env trên máy Vast.';
-  if (data.openai_model && ![...$('#openai-model').options].some(o => o.value === data.openai_model)) {
-    $('#openai-model').add(new Option(data.openai_model, data.openai_model));
-    $('#openai-model').value = data.openai_model;
-  }
+  $('#openai-model').value = 'gpt-6-luna';
+  $('#pause-ai').textContent = data.ai_speech_paused ? 'Tiếp tục lời AI' : 'Tạm dừng lời AI';
   if (data.configured.avatar) loadAvatar();
 }
 
@@ -101,6 +112,9 @@ function renderComments(comments) {
   const signature = comments.map(item => `${item.id}:${item.status}`).join('|');
   if (signature === commentsSignature) return;
   commentsSignature = signature;
+  $('#stat-waiting').textContent = comments.filter(item => ['pending', 'claimed', 'deferred'].includes(item.status)).length;
+  $('#stat-queued').textContent = comments.filter(item => item.status === 'queued').length;
+  $('#stat-fed').textContent = comments.filter(item => item.status === 'fed_to_encoder').length;
   const list = $('#comments-list');
   const scrollTop = list.scrollTop;
   const labels = {tiktok:'TikTok', facebook_personal:'Facebook cá nhân', facebook_page:'Facebook Page', dashboard:'Bình luận thử', other:'Nguồn khác'};
@@ -121,8 +135,16 @@ function renderComments(comments) {
     const message = document.createElement('p');
     message.textContent = item.message;
     const status = document.createElement('small');
-    status.className = item.status === 'processed' ? 'comment-done' : 'comment-pending';
-    status.textContent = item.status === 'processed' ? 'AI đã xử lý' : 'Đang chờ AI';
+    const statusLabels = {
+      pending:'Đang chờ xét', claimed:'Đang xét', deferred:'Tạm hoãn, sẽ xét tiếp',
+      queued:'Đã tạo lời, đang chờ phát', fed_to_encoder:'Đã cấp cho bộ mã hóa',
+      ignored:'Đã bỏ qua', expired:'Hết thời gian chờ', failed:'Xử lý lỗi',
+      uncertain:'Phát chưa xác định', withheld:'Tự giữ lại, không phát', cancelled:'Đã hủy',
+      legacy_processed:'Trạng thái cũ, chưa xác minh',
+      processed:'Trạng thái cũ, chưa xác minh'
+    };
+    status.className = item.status === 'fed_to_encoder' ? 'comment-done' : 'comment-pending';
+    status.textContent = statusLabels[item.status] || item.status;
     row.append(meta, message, status);
     fragment.append(row);
   }
@@ -135,6 +157,32 @@ function renderComments(comments) {
   list.replaceChildren(fragment);
   list.scrollTop = scrollTop;
   $('#comments-count').textContent = `${comments.length} bình luận gần nhất`;
+}
+
+async function refreshReplies() {
+  try {
+    const data = await api('/api/replies/recent', {cache:'no-store'});
+    const list = $('#replies-list');
+    const fragment = document.createDocumentFragment();
+    for (const item of data.replies || []) {
+      const row = document.createElement('div'); row.className = 'comment-row';
+      const meta = document.createElement('div'); meta.className = 'comment-meta';
+      const time = document.createElement('time'); time.textContent = new Date(item.created_at * 1000).toLocaleTimeString('vi-VN');
+      const state = document.createElement('strong');
+      state.textContent = ({fed_to_encoder:'Đã cấp cho bộ mã hóa', queued:'Đang chờ phát',
+        uncertain:'Phát chưa xác định', failed:'Xử lý lỗi', cancelled:'Đã hủy'})[item.status] || item.status;
+      meta.append(state, time); row.append(meta);
+      const speech = document.createElement('p'); speech.textContent = item.utterances.join(' '); row.append(speech);
+      for (const source of item.sources || []) {
+        const link = document.createElement('a'); link.href = source.url; link.target = '_blank'; link.rel = 'noreferrer';
+        link.textContent = source.title + ' ↗'; row.append(link);
+      }
+      fragment.append(row);
+    }
+    if (!fragment.childNodes.length) { const empty = document.createElement('p'); empty.className = 'comments-empty'; empty.textContent = 'Chưa có lời AI.'; fragment.append(empty); }
+    list.replaceChildren(fragment);
+    $('#replies-count').textContent = `${(data.replies || []).length} lời gần nhất`;
+  } catch (_) { $('#replies-count').textContent = 'Chưa cập nhật được'; }
 }
 
 async function refreshComments() {
@@ -164,6 +212,15 @@ async function loadReplySettings() {
   } catch (error) { $('#reply-result').textContent = error.message; }
 }
 
+async function loadAffiliateSettings() {
+  try {
+    const data = await api('/api/affiliate');
+    $('#affiliate-cart-confirmed').checked = Boolean(data.cart_confirmed);
+    $('#affiliate-result').textContent = data.cart_confirmed ?
+      'Đã bật lời nhắc ngắn về chiếc vòng trong giỏ hàng.' : 'Chưa giới thiệu sản phẩm trong lời live.';
+  } catch (error) { $('#affiliate-result').textContent = error.message; }
+}
+
 $('#reply-form').onsubmit = async (event) => {
   event.preventDefault();
   const button = $('#save-replies');
@@ -177,6 +234,20 @@ $('#reply-form').onsubmit = async (event) => {
     $('#reply-result').textContent = 'Đã lưu. Áp dụng từ lượt AI tạo tiếp theo, không cần dừng live.';
     toast('Đã lưu nội dung AI');
   } catch (error) { $('#reply-result').textContent = error.message; toast(error.message, true); }
+  finally { busy(button, false); }
+};
+
+$('#save-affiliate').onclick = async () => {
+  const button = $('#save-affiliate'); busy(button, true);
+  try {
+    const data = await api('/api/affiliate', {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({cart_confirmed:$('#affiliate-cart-confirmed').checked})});
+    $('#affiliate-result').textContent = data.cart_confirmed ?
+      'Đã bật. Lời giới thiệu sẽ phát theo lịch khi không có bình luận gần đây.' :
+      'Đã tắt lời giới thiệu sản phẩm.';
+    toast('Đã lưu cấu hình giỏ hàng');
+    refreshStatus();
+  } catch (error) { $('#affiliate-result').textContent = error.message; toast(error.message, true); }
   finally { busy(button, false); }
 };
 
@@ -205,7 +276,7 @@ $$('.nav').forEach(button => button.addEventListener('click', () => {
   if (button.dataset.page === 'voice') loadVoices().catch(e => toast(e.message, true));
 }));
 
-$('#refresh').onclick = () => { refreshStatus(true); loadReplySettings(); };
+$('#refresh').onclick = () => { refreshStatus(true); loadReplySettings(); loadAffiliateSettings(); };
 $('#comment-source').onchange = showChannelSettings;
 $('#show-key').onclick = () => {
   const input = $('#openai-key'); input.type = input.type === 'password' ? 'text' : 'password';
@@ -219,18 +290,9 @@ async function openaiAction(save) {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({api_key: $('#openai-key').value, model: $('#openai-model').value})
     });
-    if (data.models) {
-      const current = $('#openai-model').value || state?.openai_model;
-      $('#openai-model').innerHTML = '<option value="">Chọn model</option>';
-      data.models.forEach(model => $('#openai-model').add(new Option(model, model)));
-      if (current && data.models.includes(current)) $('#openai-model').value = current;
-      else {
-        const preferred = ['gpt-4.1-mini', 'gpt-4o-mini'].find(model => data.models.includes(model));
-        $('#openai-model').value = preferred || data.models.find(model => model.startsWith('gpt-')) || '';
-      }
-    }
+    $('#openai-model').value = 'gpt-6-luna';
     $('#openai-result').className = 'result ok';
-    $('#openai-result').textContent = save ? `Đã lưu model ${data.model}.` : `Kết nối thành công · ${data.models.length} model khả dụng.`;
+    $('#openai-result').textContent = save ? 'Đã lưu gpt-6-luna.' : 'Luna và Structured Outputs hoạt động.';
     toast(save ? 'Đã lưu cấu hình OpenAI' : 'OpenAI API hoạt động');
     refreshStatus();
   } catch (error) { $('#openai-result').className = 'result'; $('#openai-result').textContent = error.message; toast(error.message, true); }
@@ -238,6 +300,14 @@ async function openaiAction(save) {
 }
 $('#test-openai').onclick = () => openaiAction(false);
 $('#save-openai').onclick = () => openaiAction(true);
+$('#pause-ai').onclick = async () => {
+  try {
+    const paused = !state?.ai_speech_paused;
+    await api('/api/ai/pause', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({paused})});
+    toast(paused ? 'Đã tạm dừng lời AI' : 'Đã tiếp tục lời AI');
+    await refreshStatus();
+  } catch (error) { toast(error.message, true); }
+};
 
 $('#voice-file').onchange = async () => {
   const file = $('#voice-file').files[0]; if (!file) return;
@@ -316,6 +386,7 @@ $('#test-live').onclick = async () => {
 };
 
 setInterval(() => $('#clock').textContent = new Intl.DateTimeFormat('vi-VN',{dateStyle:'medium',timeStyle:'medium'}).format(new Date()),1000);
-refreshStatus(); refreshComments(); loadReplySettings(); loadVoices().catch(()=>{});
+refreshStatus(); refreshComments(); refreshReplies(); loadReplySettings(); loadAffiliateSettings(); loadVoices().catch(()=>{});
 setInterval(()=>refreshStatus(),5000);
 setInterval(refreshComments,2000);
+setInterval(refreshReplies,4000);

@@ -73,6 +73,13 @@ class StreamerOutputTests(unittest.TestCase):
         segments.put(Path("three.mp4"))
         self.assertEqual(streamer._next_segment(segments, False), (Path("three.mp4"), False))
 
+    def test_single_viewer_segment_starts_after_short_prebuffer_deadline(self):
+        streamer = self._streamer("rtsp://127.0.0.1:8554/avatar")
+        segments: queue.Queue[Path] = queue.Queue()
+        segments.put(Path("viewer.mp4"))
+        streamer.initial_buffer_deadline = 0
+        self.assertEqual(streamer._next_segment(segments, True), (Path("viewer.mp4"), False))
+
     def test_viewer_comment_discards_only_sales_clips_waiting_on_both_tracks(self):
         streamer = self._streamer("rtsp://127.0.0.1:8554/avatar")
         with tempfile.TemporaryDirectory() as directory:

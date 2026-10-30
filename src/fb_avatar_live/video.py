@@ -7,6 +7,15 @@ from typing import Sequence, TypeVar
 T = TypeVar("T")
 
 
+def scene_frame_map(scene_order: Sequence[int], frames_per_scene: int, source_scenes: int) -> list[int]:
+    """Map a long scene timeline onto frames prepared from each unique scene once."""
+    if frames_per_scene <= 0 or source_scenes <= 0:
+        raise ValueError("frames_per_scene and source_scenes must be positive")
+    if not scene_order or any(scene < 0 or scene >= source_scenes for scene in scene_order):
+        raise ValueError("scene_order must contain valid source scene indexes")
+    return [scene * frames_per_scene + frame for scene in scene_order for frame in range(frames_per_scene)]
+
+
 def rotate_cycle(values: Sequence[T], offset: int) -> list[T]:
     if not values:
         return []

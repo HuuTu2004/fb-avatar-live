@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import queue
 import shutil
@@ -22,7 +23,7 @@ from transformers import WhisperModel
 ROOT = Path(os.getenv("ROOT", "/workspace/fb-avatar-live")).resolve()
 sys.path.insert(0, str(ROOT / "src"))
 from fb_avatar_live.config import load_env
-from fb_avatar_live.video import rotate_cycle, smooth_bboxes
+from fb_avatar_live.video import rotate_cycle, scene_frame_map, smooth_bboxes
 
 load_env(ROOT / ".env")
 
@@ -36,7 +37,7 @@ class MuseTalkRenderer:
     def __init__(self) -> None:
         self.root = Path(os.getenv("MUSETALK_ROOT", "/workspace/MuseTalk")).resolve()
         self.shared_dir = Path(os.getenv("DATA_DIR", "/workspace/fb-avatar-live/data")).resolve()
-        self.avatar_video = Path(os.environ["AVATAR_VIDEO"]).resolve()
+        self.avatar_video = Path(os.getenv("AVATAR_PREP_VIDEO") or os.environ["AVATAR_VIDEO"]).resolve()
         self.avatar_id = os.getenv("AVATAR_ID", "live-avatar")
         self.fps = int(os.getenv("OUTPUT_FPS", "25"))
         self.width = int(os.getenv("OUTPUT_WIDTH", "1280"))
@@ -107,6 +108,21 @@ class MuseTalkRenderer:
             batch_size=self.batch_size,
             preparation=not cache.exists(),
         )
+        timeline_path = os.getenv("AVATAR_TIMELINE_FILE", "").strip()
+        if timeline_path:
+            timeline = json.loads(Path(timeline_path).read_text(encoding="utf-8"))
+            frames_per_scene = int(timeline["frames_per_scene"])
+            source_scenes = int(timeline["source_scenes"])
+            prepared_frames = len(self.avatar.frame_list_cycle) // 2
+            expected_frames = frames_per_scene * source_scenes
+            if prepared_frames != expected_frames:
+                raise ValueError(
+                    f"Prepared avatar has {prepared_frames} source frames, expected {expected_frames}"
+                )
+            self.frame_map = scene_frame_map(timeline["scene_order"], frames_per_scene, source_scenes)
+        else:
+            self.frame_map = list(range(len(self.avatar.frame_list_cycle)))
+        self.latent_cycle = [self.avatar.input_latent_list_cycle[index] for index in self.frame_map]
         if os.getenv("MUSETALK_WARMUP", "true").lower() == "true":
             self._warm_up()
 
@@ -160,7 +176,7 @@ class MuseTalkRenderer:
             assert process.stdin is not None
             for frame_offset in range(count):
                 result = frames.get()
-                index = (start_cursor + frame_offset) % len(self.avatar.frame_list_cycle)
+                index = self.frame_map[(start_cursor + frame_offset) % len(self.frame_map)]
                 bbox = self.avatar.coord_list_cycle[index]
                 original = self.avatar.frame_list_cycle[index].copy()
                 x1, y1, x2, y2 = bbox
@@ -219,7 +235,7 @@ class MuseTalkRenderer:
                 daemon=True,
             )
             writer.start()
-            latent_cycle = rotate_cycle(self.avatar.input_latent_list_cycle, start_cursor)
+            latent_cycle = rotate_cycle(self.latent_cycle, start_cursor)
             generator = rt.datagen(chunks, latent_cycle, self.batch_size)
             for whisper_batch, latent_batch in generator:
                 audio_features = rt.pe(whisper_batch.to(rt.device))
@@ -235,7 +251,7 @@ class MuseTalkRenderer:
             writer.join()
             if errors:
                 raise errors[0]
-            self.frame_cursor = (start_cursor + len(chunks)) % len(self.avatar.frame_list_cycle)
+            self.frame_cursor = (start_cursor + len(chunks)) % len(self.frame_map)
             subprocess.run(
                 [
                     "ffmpeg", "-y", "-loglevel", "error", "-i", str(temp_video), "-i", str(audio_path),

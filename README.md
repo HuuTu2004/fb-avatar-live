@@ -4,8 +4,9 @@ Pipeline chạy liên tục trên một máy Vast.ai:
 
 ```text
 Facebook Graph API ─┐
-TikTok LIVE Webcast ─┴─> SQLite dedupe/batch -> hosted LLM
-                       -> short speech chunks -> ZeroTTS (CPU)
+TikTok LIVE Webcast ─┴─> SQLite ledger -> gpt-6-luna (OpenAI Responses)
+                       -> source catalog + automatic safety gate
+                       -> speech outbox -> ZeroTTS (CPU)
                        -> persistent MuseTalk 1.5 (GPU)
                        -> FFmpeg H.264/Opus -> MediaMTX
                           ├─ WebRTC/WHEP endpoint (optional)
@@ -18,7 +19,7 @@ MuseTalk và ZeroTTS chạy ở hai môi trường Python riêng. MuseTalk giữ
 Control panel có bốn khu vực hoạt động trực tiếp với backend:
 
 1. Dashboard xem WebRTC, trạng thái service, start/stop và đưa câu thử vào hàng đợi.
-2. OpenAI API kiểm tra key, lấy model hiện có và lưu cấu hình.
+2. OpenAI API kiểm tra key và một lượt Luna trả JSON đúng schema trước khi lưu cấu hình.
 3. Clone voice cài voice pack ZeroTTS, chọn giọng và tổng hợp bản nghe thử.
 4. Avatar & Live tải video, chuẩn hóa 720p/25 FPS, chọn nguồn comment và lưu đích Facebook/TikTok.
 
@@ -67,7 +68,7 @@ FB_PAGE_ACCESS_TOKEN=...
 TIKTOK_UNIQUE_ID=ten_tai_khoan
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_API_KEY=...
-LLM_MODEL=...
+LLM_MODEL=gpt-6-luna
 STREAM_URL=rtsp://127.0.0.1:8554/avatar
 FACEBOOK_STREAM_URL=rtmps://...private-stream-key...
 ```
@@ -78,11 +79,19 @@ FACEBOOK_STREAM_URL=rtmps://...private-stream-key...
 
 Để đọc bình luận live **trang cá nhân**, cài [Social Stream Ninja](https://github.com/steveseguin/social_stream) trên Chrome. Đăng nhập Facebook và mở chính video live ở chế độ người xem, bật thu thập chat trong SSN. Trong SSN bật **Enable remote API control of extension** và **Send chat messages to API server**, rồi lấy Session ID từ URL dock của SSN. Trong Avatar & Live chọn **Facebook cá nhân · Social Stream Ninja**, dán Session ID, bật **Chia sẻ liên tục**, lưu cấu hình. Cần OpenAI API key để trả lời bình luận thật. SSN gửi bình luận qua máy chủ WebSocket của họ tới pipeline; giữ tab Facebook mở trong lúc live. Page token chỉ dành cho nguồn Facebook Page.
 
-Để kiểm tra avatar nói liên tục, bật **Chia sẻ liên tục** trong mục Avatar & Live. Khi chưa có OpenAI key, pipeline dùng vòng kịch bản Phật pháp nội bộ; sau khi lưu OpenAI key và model, cùng chế độ này sẽ dùng OpenAI để tạo lời dẫn từ các chủ đề đã cấu hình.
+Để kiểm tra avatar nói liên tục, bật **Chia sẻ liên tục** trong mục Avatar & Live. Khi chưa có OpenAI key, pipeline dùng vòng kịch bản Phật pháp nội bộ; sau khi lưu key, lời dẫn mới dùng Luna và thẻ nguồn trong `src/fb_avatar_live/live_reply/dharma_cards.json`. Bình luận thật cần key để có lời đáp AI.
 
-Trong **Dashboard → Nội dung AI**, sửa vai trò/nhân vật, hướng dẫn cách trả lời, danh sách chủ đề (mỗi dòng một chủ đề) và cách gọi chung khi không đọc được tên người xem. Bấm **Lưu nội dung AI** để áp dụng từ lượt AI tạo tiếp theo, không cần dừng live; đoạn tiếng/video đã tạo vẫn phát hết. Vai trò và chủ đề ban đầu mặc định là Phật pháp, có thể đổi sang nội dung khác. Cấu hình tùy chỉnh cần OpenAI; chế độ không có key vẫn chỉ dùng kịch bản Phật pháp có sẵn.
+Khi bật **Chia sẻ liên tục**, bộ điều phối chuẩn bị sẵn tối thiểu vài đoạn lời dẫn. Một đoạn kịch bản địa phương được xếp hàng ngay lúc khởi động; Luna tạo các đoạn tiếp theo, còn kịch bản địa phương làm dự phòng nếu Luna chậm hoặc lỗi. Bình luận mới không cắt lời đang phát: lời dẫn chuẩn bị sẵn tiếp tục làm cầu nối, câu trả lời được ưu tiên khi video của nó đã render xong. Mỗi lượt AI là một clip nói trọn ý để tránh khoảng dừng giữa hai phần của cùng câu trả lời. Bộ đệm đầu chỉ chờ tối đa một giây khi đã có một clip; nó không đợi mãi clip thứ hai.
 
-Với bình luận, AI chọn một chủ đề hay nhất trong batch theo định hướng đã lưu và nhắc tên một người hỏi đại diện. Tên được chuẩn hóa chữ Unicode, bỏ emoji/ký tự trang trí; chuỗi số, handle tự sinh, tên quá dài hoặc chữ mà giọng Việt khó đọc sẽ dùng cách gọi chung. AI được hướng dẫn không đọc tên tục tĩu, xúc phạm hay giống chỉ dẫn, nhưng không thể bảo đảm lọc hoàn hảo mọi biệt danh. Tên gốc vẫn hiển thị trên dashboard. Nội dung tùy chỉnh được lưu trong `LLM_REPLY_SETTINGS` dưới dạng JSON một dòng trong `.env`, không ghi đè API key hoặc cấu hình kênh; cấu hình lỗi khi sửa tay sẽ giữ bản hợp lệ gần nhất trong pipeline.
+**Trạm Bình An:** Lời mở đầu ngắn, niệm danh hiệu Phật rồi đi thẳng vào chuyện đời và lời mời chia sẻ. Trên hình phát có nhãn “Avatar AI”; khi có người hỏi danh tính, hệ thống trả lời rõ và ngắn, không tự nhận là tu sĩ thật. Lời dẫn xưng “tôi”, gọi “quý vị”, giải thích giáo lý bằng ví dụ đời sống. Lời mời chia sẻ xuất hiện khoảng mỗi 3 phút và nhắc rằng khung chat là công khai.
+
+**Giới thiệu vòng:** Trong Dashboard có công tắc xác nhận **Vòng Chú Lăng Nghiêm đã ở giỏ hàng của phiên live**. Mặc định tắt. Khi bật, hệ thống có thể nhắc sản phẩm lần đầu sau khoảng 5 phút, rồi cách tối thiểu 15 phút, chỉ trong phần lời dẫn chung và khi đã ít nhất 3 phút không có bình luận mới. Lời phát chỉ nhắc nhẹ vòng trong giỏ hàng; video hiển thị nhãn “Giỏ hàng: liên kết tiếp thị” ở góc dưới. Vòng chỉ là vật nhắc chánh niệm, không được hứa hộ thân, đổi vận hay chữa bệnh. Điều kiện đổi trả cần xem trên **trang sản phẩm cụ thể**; không có lời cam kết hoàn trả chung cho mọi gian hàng. Mọi lời gọi LLM vẫn dùng Luna; lời mở đầu, lời mời và dự phòng là kịch bản cố định.
+
+Xem bản lời và quy tắc đầy đủ tại [TRAM_BINH_AN_PROMPT.md](docs/TRAM_BINH_AN_PROMPT.md), cùng [kết quả thử Luna qua luồng điều phối](docs/LLM_QUALITY_EVAL_2026-10-30.md). Nếu nền tảng live có công cụ công bố nội dung thương mại, hãy bật công bố tương ứng bên cạnh nhãn trên video.
+
+Trong **Dashboard → Nội dung AI**, chỉnh giọng trò chuyện, chủ đề (mỗi dòng một chủ đề) và cách gọi chung khi không đọc được tên người xem. Bấm **Lưu nội dung AI** để áp dụng từ lượt AI tạo tiếp theo. Các trường này là dữ liệu phong cách; quy tắc an toàn và phạm vi Phật học vẫn nằm trong code. Nút **Tạm dừng tiếng AI** ngưng tạo và đưa lời mới vào hàng phát, còn video idle tiếp tục chạy.
+
+Với bình luận, AI chọn một câu đáng trả lời, gom những câu thật sự cùng ý và hoãn các câu khác. Luna tra các thẻ nguồn rồi soạn 1–2 đoạn nói trọn câu; ứng dụng kiểm tra ID, nguồn, độ dài và moderation trước khi phát. Bình luận tự hại hoặc đe dọa rõ ràng nhận mẫu hỗ trợ an toàn. Bản nháp không đạt được tự giữ lại, không có bước người duyệt. Dashboard hiển thị câu đã chọn, trạng thái lời phát và URL nguồn. Tên được chuẩn hóa; tên khó đọc dùng “bạn”. Cấu hình tùy chỉnh lưu trong `LLM_REPLY_SETTINGS` của `.env`.
 
 Không commit `.env`; token Facebook, API key LLM và stream key đều là bí mật.
 
@@ -127,8 +136,8 @@ Pipeline vẫn gọi LLM, ZeroTTS, MuseTalk và stream thật. Dashboard không 
 - `ZEROTTS_THREADS=2`: số luồng ONNX đang dùng với CUDA; với CPU có thể dùng 4.
 - `ZEROTTS_WARMUP=true`: tổng hợp một câu rất ngắn khi khởi động để lượt bình luận đầu không chịu chi phí khởi tạo ONNX.
 - `SPEECH_CHUNK_CHARS=260`: giữ trọn một lượt trả lời trong cùng ngữ cảnh audio của MuseTalk, tránh đoạn đuôi ngắn và điểm nối giữa câu.
-- Khi bật chia sẻ Phật pháp liên tục và có OpenAI key, AI xáo 18 chủ đề, kết hợp 12 tình huống đời thường thành 216 cặp không trùng trước khi dùng lại, đồng thời kiểm tra nội dung với 24 lượt gần nhất. Bình luận được ưu tiên theo batch: AI đọc toàn bộ batch, gom câu hỏi gần ý rồi chọn một chủ đề hay nhất để trả lời tập trung. Ưu tiên câu hỏi Phật pháp rõ ràng, có chiều sâu, hữu ích và áp dụng được trong đời sống; nếu tương đương thì ưu tiên chủ đề nhiều người quan tâm và chưa trả lời gần đây. Lời chào và spam không được dùng để chọn chủ đề; nếu chỉ có các nội dung này, AI tiếp tục mạch chia sẻ. Các chủ đề không được chọn trong batch được bỏ qua, không xếp hàng trả lời riêng. Mỗi batch chỉ gọi AI một lần và đi vào hàng đợi tiếng/video ngay khi tạo xong; nếu AI lỗi hoặc trả rỗng, cả batch vẫn chờ để thử lại. Khi không có bình luận, AI tiếp tục chủ đề gốc bằng lời giảng gần gũi, dễ hiểu. Có thể chỉnh vai trò và giọng nói trong `LLM_SYSTEM_PROMPT`; biến `DEMO_SALES_MODE` giữ tên cũ để tương thích cấu hình.
-- `STREAM_PREBUFFER_SEGMENTS=2`: giữ hai lượt đầy đủ để che dao động thời gian của ZeroTTS/MuseTalk; đổi lại lần nói đầu tiên bắt đầu chậm hơn.
+- Khi bật chia sẻ Phật pháp liên tục và có OpenAI key, Luna giữ một chủ đề qua khoảng năm đoạn nối tiếp: tình huống đời thường, cách nhìn Phật học, một góc cần hiểu rõ, bước thực tập và câu khép ý. Sau đó mới chuyển sang chủ đề kế tiếp. Lời mời chia sẻ và câu trả lời bình luận có thể xen vào; đoạn giảng tiếp theo nối lại ý trước khi bị ngắt. Bình luận được xét theo batch, nhưng chỉ câu đã chọn hoặc thật sự cùng ý mới gắn với lời đáp; các câu khác được hoãn tới lượt sau. Luna dùng `none` để chọn và `low` để viết. Khi API lỗi, bình luận được thử lại có giới hạn; khi lời không đạt kiểm tra, câu được giữ lại và không phát. `DEMO_SALES_MODE` giữ tên cũ để tương thích cấu hình.
+- `STREAM_PREBUFFER_SEGMENTS=2`: giữ hai lượt đầy đủ để che dao động thời gian của ZeroTTS/MuseTalk; nếu chỉ có một clip, bộ đệm đầu cho phát sau tối đa một giây.
 - `MUSETALK_BATCH_SIZE=20`: tăng đến khi GPU gần đầy. RTX 3090 24 GB thường đủ dư cho inference FP16.
 - `MUSETALK_XFORMERS=true`: dùng attention tối ưu; script bootstrap cài bản khớp PyTorch 2.0.1.
 - `MUSETALK_WARMUP=true`: chạy một giây audio im lặng lúc khởi động để lượt nói đầu không chịu chi phí warm-up CUDA.

@@ -24,3 +24,6 @@ fb-avatar-live = "fb_avatar_live.main:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"fb_avatar_live.live_reply" = ["dharma_cards.json"]

@@ -342,7 +342,7 @@ class DemoCommentSource:
             if not message:
                 continue
             identifier = str(item.get("id") or hashlib.sha256(line.encode()).hexdigest()[:20])
-            comments.append(Comment(identifier, str(item.get("author") or "Người xem"), message[:1000]))
+            comments.append(Comment(f"demo:{identifier}", str(item.get("author") or "Người xem"), message[:1000]))
         return comments
 
 

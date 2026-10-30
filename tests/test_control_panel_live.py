@@ -49,6 +49,22 @@ class PersonalFacebookLiveTests(unittest.TestCase):
             with self.subTest(fields=fields), self.assertRaises(ValidationError):
                 self.panel.ReplySettings(**fields)
 
+    def test_affiliate_toggle_requires_explicit_cart_confirmation(self) -> None:
+        panel = self.panel
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / ".env"
+            path.write_text(f"LLM_API_KEY=keep-secret\nDATA_DIR={directory}\n", encoding="utf-8")
+            with patch.object(panel, "env_file", panel.EnvFile(path)):
+                self.assertFalse(asyncio.run(panel.affiliate_settings())["cart_confirmed"])
+                result = asyncio.run(panel.save_affiliate_settings(panel.AffiliatePayload(cart_confirmed=True)))
+                self.assertTrue(result["cart_confirmed"])
+                self.assertTrue(asyncio.run(panel.affiliate_settings())["cart_confirmed"])
+                self.assertEqual(panel.env_file.read()["LLM_API_KEY"], "keep-secret")
+                label = Path(directory) / "stream" / "commerce-label.txt"
+                self.assertEqual(label.read_text(encoding="utf-8"), "Giỏ hàng: liên kết tiếp thị")
+                asyncio.run(panel.save_affiliate_settings(panel.AffiliatePayload(cart_confirmed=False)))
+                self.assertEqual(label.read_text(encoding="utf-8"), "")
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.directory = tempfile.TemporaryDirectory()

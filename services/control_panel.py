@@ -15,6 +15,7 @@ import time
 import uuid
 import zipfile
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
 import httpx
@@ -26,6 +27,7 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 from fb_avatar_live.config import ReplySettings, read_reply_settings
+from fb_avatar_live.streamer import write_commerce_label
 
 
 ROOT = Path(os.getenv("ROOT", "/workspace/fb-avatar-live")).resolve()
@@ -43,7 +45,15 @@ FORWARDER_HEALTH_DIR = Path("/tmp")
 
 class OpenAIPayload(BaseModel):
     api_key: str = ""
-    model: str
+    model: Literal["gpt-6-luna"] = "gpt-6-luna"
+
+
+class PauseAIPayload(BaseModel):
+    paused: bool
+
+
+class AffiliatePayload(BaseModel):
+    cart_confirmed: bool
 
 
 class VoicePayload(BaseModel):
@@ -206,7 +216,7 @@ async def _path_ready() -> bool:
 def _configured(values: dict[str, str]) -> dict[str, bool]:
     uses_openai = values.get("LLM_BASE_URL", "").rstrip("/") == OPENAI_BASE_URL
     return {
-        "openai": bool(uses_openai and values.get("LLM_API_KEY") and values.get("LLM_MODEL")),
+        "openai": bool(uses_openai and values.get("LLM_API_KEY")),
         "voice": bool(values.get("ZEROTTS_VOICE")),
         "avatar": Path(values.get("AVATAR_VIDEO", "")).is_file(),
         "facebook": bool(values.get("FB_OBJECT_ID") and values.get("FB_PAGE_ACCESS_TOKEN")),
@@ -262,9 +272,34 @@ async def status() -> dict:
         "has_ssn_session_id": bool(values.get("SSN_SESSION_ID")),
         "has_fb_stream_url": bool(values.get("FACEBOOK_STREAM_URL")),
         "facebook_server_url": values.get("FACEBOOK_SERVER_URL") or _facebook_server(values.get("FACEBOOK_STREAM_URL", "")),
-        "openai_model": values.get("LLM_MODEL", "") if configured["openai"] else "",
+        "openai_model": "gpt-6-luna" if configured["openai"] else "",
         "has_openai_key": configured["openai"],
+        "ai_speech_paused": values.get("PAUSE_AI_SPEECH", "false").lower() in {"true", "1", "yes", "on"},
+        "affiliate_cart_confirmed": values.get("AFFILIATE_CART_CONFIRMED", "false").lower() in {"true", "1", "yes", "on"},
     }
+
+
+@app.post("/api/ai/pause")
+async def pause_ai_speech(payload: PauseAIPayload) -> dict:
+    env_file.update({"PAUSE_AI_SPEECH": "true" if payload.paused else "false"})
+    return {"ok": True, "paused": payload.paused}
+
+
+@app.get("/api/affiliate")
+async def affiliate_settings() -> dict:
+    value = env_file.read().get("AFFILIATE_CART_CONFIRMED", "false")
+    return {"cart_confirmed": value.lower() in {"true", "1", "yes", "on"}}
+
+
+@app.post("/api/affiliate")
+async def save_affiliate_settings(payload: AffiliatePayload) -> dict:
+    env_file.update({"AFFILIATE_CART_CONFIRMED": "true" if payload.cart_confirmed else "false"})
+    values = env_file.read()
+    data_dir = Path(values.get("DATA_DIR", ROOT / "data"))
+    if not data_dir.is_absolute():
+        data_dir = ROOT / data_dir
+    write_commerce_label(data_dir, payload.cart_confirmed)
+    return {"ok": True, "cart_confirmed": payload.cart_confirmed}
 
 
 @app.get("/api/replies")
@@ -285,14 +320,19 @@ def _recent_comments(path: Path, limit: int) -> list[dict]:
     if not path.is_file():
         return []
     with sqlite3.connect(path, timeout=2) as db:
+        fields = {row[1] for row in db.execute("PRAGMA table_info(comments)")}
+        source_col = "source" if "source" in fields else "''"
+        reason_col = "reason_code" if "reason_code" in fields else "''"
+        reply_col = "reply_id" if "reply_id" in fields else "NULL"
         rows = db.execute(
-            "SELECT id, author, message, status, added_at FROM comments "
-            "WHERE id NOT LIKE 'sales-demo-%' ORDER BY added_at DESC, rowid DESC LIMIT ?",
-            (limit,),
+            f"SELECT id, author, message, status, added_at, {source_col}, {reason_col}, {reply_col} FROM comments "
+            "WHERE id NOT LIKE 'sales-demo-%' ORDER BY added_at DESC, rowid DESC LIMIT ?", (limit,),
         ).fetchall()
     comments = []
-    for identifier, author, message, state, added_at in rows:
-        if identifier.startswith("tiktok:"):
+    for identifier, author, message, state, added_at, stored_source, reason, reply_id in rows:
+        if stored_source:
+            source = stored_source
+        elif identifier.startswith("tiktok:"):
             source = "tiktok"
         elif identifier.startswith("facebook-personal:"):
             source = "facebook_personal"
@@ -304,7 +344,8 @@ def _recent_comments(path: Path, limit: int) -> list[dict]:
             source = "other"
         comments.append({
             "id": identifier, "source": source, "author": author,
-            "message": message, "status": state, "received_at": added_at,
+            "message": message, "status": state, "reason_code": reason,
+            "reply_id": reply_id, "received_at": added_at,
         })
     return comments
 
@@ -321,21 +362,46 @@ async def recent_comments() -> Response:
     )
 
 
+@app.get("/api/replies/recent")
+async def recent_generated_replies() -> dict:
+    values = env_file.read()
+    path = Path(values.get("DATA_DIR", ROOT / "data")) / "comments.sqlite3"
+    if not path.is_file():
+        return {"replies": []}
+    try:
+        with sqlite3.connect(path, timeout=2) as db:
+            rows = db.execute("""SELECT id, utterances_json, source_ids_json, status, reason_code, created_at
+                FROM replies ORDER BY created_at DESC LIMIT 20""").fetchall()
+    except sqlite3.OperationalError:
+        return {"replies": []}
+    catalog_path = ROOT / "src" / "fb_avatar_live" / "live_reply" / "dharma_cards.json"
+    cards = {item["id"]: item for item in json.loads(catalog_path.read_text(encoding="utf-8"))} if catalog_path.is_file() else {}
+    return {"replies": [{"id": row[0], "utterances": json.loads(row[1]),
+                          "sources": [{"id": key, "title": cards[key]["title"], "url": cards[key]["source_url"]}
+                                      for key in json.loads(row[2]) if key in cards],
+                          "status": row[3], "reason_code": row[4], "created_at": row[5]}
+                         for row in rows]}
+
+
 def _saved_openai_key(values: dict[str, str]) -> str:
     if values.get("LLM_BASE_URL", "").rstrip("/") != OPENAI_BASE_URL:
         return ""
     return values.get("LLM_API_KEY", "")
 
 
-async def _openai_models(api_key: str) -> list[str]:
-    async with httpx.AsyncClient(timeout=15) as client:
-        response = await client.get(
-            f"{OPENAI_BASE_URL}/models",
-            headers={"Authorization": f"Bearer {api_key}"},
+async def _test_luna_response(api_key: str) -> None:
+    from fb_avatar_live.live_reply.engine import OpenAIResponses
+
+    schema = {"type": "object", "additionalProperties": False,
+              "properties": {"ok": {"type": "boolean"}}, "required": ["ok"]}
+    async with httpx.AsyncClient(timeout=20) as client:
+        result, moderation = await OpenAIResponses(client, api_key).structured(
+            instructions="Trả lời phép thử kết nối bằng JSON đúng schema.",
+            payload={"probe": "Trả ok=true"}, schema=schema,
+            name="connection_probe", effort="none", max_tokens=80,
         )
-        if response.status_code >= 400:
-            raise HTTPException(status_code=400, detail="OpenAI từ chối API key")
-        return sorted(str(item["id"]) for item in response.json().get("data", []) if item.get("id"))
+    if result.get("ok") is not True or (moderation.get("output") or {}).get("type") != "moderation_result":
+        raise ValueError("Luna chưa trả lời đúng định dạng hoặc thiếu moderation đầu ra")
 
 
 @app.post("/api/openai/test")
@@ -344,25 +410,24 @@ async def test_openai(payload: OpenAIPayload) -> dict:
     api_key = payload.api_key.strip() or _saved_openai_key(current)
     if not api_key:
         raise HTTPException(status_code=400, detail="Hãy nhập OpenAI API key")
-    models = await _openai_models(api_key)
-    if payload.model and payload.model not in models:
-        raise HTTPException(status_code=400, detail="Model không có trong tài khoản OpenAI này")
-    return {"ok": True, "models": models}
+    try:
+        await _test_luna_response(api_key)
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Luna chưa chạy được Responses/Structured Outputs") from exc
+    return {"ok": True, "models": ["gpt-6-luna"], "model": "gpt-6-luna"}
 
 
 @app.post("/api/openai/save")
 async def save_openai(payload: OpenAIPayload) -> dict:
     current = env_file.read()
     api_key = payload.api_key.strip() or _saved_openai_key(current)
-    if not api_key or not payload.model.strip():
-        raise HTTPException(status_code=400, detail="Thiếu API key hoặc model")
-    models = await _openai_models(api_key)
-    if payload.model not in models:
-        raise HTTPException(status_code=400, detail="Model không có trong tài khoản OpenAI này")
-    env_file.update({"LLM_BASE_URL": OPENAI_BASE_URL, "LLM_API_KEY": api_key, "LLM_MODEL": payload.model})
+    if not api_key:
+        raise HTTPException(status_code=400, detail="Thiếu API key")
+    await test_openai(payload)
+    env_file.update({"LLM_BASE_URL": OPENAI_BASE_URL, "LLM_API_KEY": api_key, "LLM_MODEL": "gpt-6-luna"})
     if _supervisor_status("fb-avatar-pipeline") == "RUNNING":
         await asyncio.to_thread(_start_or_restart, "fb-avatar-pipeline")
-    return {"ok": True, "model": payload.model}
+    return {"ok": True, "model": "gpt-6-luna"}
 
 
 def _voice_items() -> list[dict]:
@@ -519,7 +584,12 @@ async def upload_avatar(file: UploadFile = File(...)) -> dict:
         raise HTTPException(status_code=400, detail=f"Không xử lý được video: {exc}") from exc
     finally:
         source.unlink(missing_ok=True)
-    env_file.update({"AVATAR_VIDEO": str(destination), "AVATAR_ID": info["avatar_id"]})
+    env_file.update({
+        "AVATAR_VIDEO": str(destination),
+        "AVATAR_ID": info["avatar_id"],
+        "AVATAR_PREP_VIDEO": "",
+        "AVATAR_TIMELINE_FILE": "",
+    })
     try:
         await asyncio.to_thread(_start_or_restart, "fb-avatar-musetalk")
     except RuntimeError:
